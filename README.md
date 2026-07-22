@@ -11,6 +11,8 @@
 </p>
 
 <p align="center">
+  macOS only &middot; iTerm2 &middot; Zero dependencies
+  <br><br>
   <a href="#quick-start">Quick Start</a> &middot;
   <a href="#features">Features</a> &middot;
   <a href="#how-it-works">How It Works</a> &middot;
