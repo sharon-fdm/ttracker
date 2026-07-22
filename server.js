@@ -971,44 +971,59 @@ function getDashboardHTML() {
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='16' fill='%23fdf6e3'/><text x='44' y='70' font-family='monospace' font-size='56' font-weight='bold' text-anchor='middle' letter-spacing='-8'><tspan fill='%23268bd2'>t</tspan><tspan fill='%232aa198'>t</tspan></text></svg>">
 <title>ttracker</title>
 <style>
-  /* Solarized Light - full palette
-     base03  #002b36   base3  #fdf6e3
-     base02  #073642   base2  #eee8d5
-     base01  #586e75   base1  #93a1a1
-     base00  #657b83   base0  #839496
-     yellow  #b58900   orange #cb4b16
-     red     #dc322f   magenta #d33682
-     violet  #6c71c4   blue   #268bd2
-     cyan    #2aa198   green  #859900
-  */
+  /* Solarized palette */
+  :root {
+    --bg:       #fdf6e3;
+    --bg-alt:   #eee8d5;
+    --bg-border:#d3cdb8;
+    --fg:       #586e75;
+    --fg-dim:   #839496;
+    --fg-muted: #93a1a1;
+    --yellow:   #b58900;
+    --orange:   #cb4b16;
+    --red:      #dc322f;
+    --magenta:  #d33682;
+    --violet:   #6c71c4;
+    --blue:     #268bd2;
+    --cyan:     #2aa198;
+    --green:    #859900;
+  }
+  body.dark {
+    --bg:       #002b36;
+    --bg-alt:   #073642;
+    --bg-border:#586e75;
+    --fg:       #839496;
+    --fg-dim:   #657b83;
+    --fg-muted: #586e75;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
-    background: #fdf6e3;
-    color: #586e75;
+    background: var(--bg);
+    color: var(--fg);
     padding: 24px;
     font-size: 13px;
   }
   h1 {
-    color: #268bd2;
+    color: var(--blue);
     font-size: 22px;
     font-weight: 700;
     letter-spacing: -0.5px;
   }
-  h1 span { color: #2aa198; }
+  h1 span { color: var(--cyan); }
   .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 24px;
     padding-bottom: 16px;
-    border-bottom: 2px solid #eee8d5;
+    border-bottom: 2px solid var(--bg-alt);
   }
-  .header-info { color: #839496; font-size: 12px; }
+  .header-info { color: var(--fg-dim); font-size: 12px; }
   .header-info span { margin-left: 16px; }
   .refresh-btn {
-    background: #2aa198;
-    color: #fdf6e3;
+    background: var(--cyan);
+    color: var(--bg);
     border: none;
     border-radius: 6px;
     padding: 6px 14px;
@@ -1018,17 +1033,17 @@ function getDashboardHTML() {
     font-weight: 600;
   }
   .refresh-btn:hover { opacity: 0.85; }
-  .refresh-btn:disabled { background: #93a1a1; }
+  .refresh-btn:disabled { background: var(--fg-muted); }
   h2 {
-    color: #268bd2;
+    color: var(--blue);
     font-size: 15px;
     font-weight: 600;
     margin: 28px 0 12px;
     padding-left: 8px;
-    border-left: 3px solid #268bd2;
+    border-left: 3px solid var(--blue);
   }
-  .history-heading { color: #6c71c4; border-left-color: #6c71c4; }
-  .count { color: #93a1a1; font-weight: 400; margin-left: 8px; }
+  .history-heading { color: var(--violet); border-left-color: var(--violet); }
+  .count { color: var(--fg-muted); font-weight: 400; margin-left: 8px; }
   table {
     width: 100%;
     border-collapse: collapse;
@@ -1039,29 +1054,29 @@ function getDashboardHTML() {
   th {
     text-align: left;
     padding: 10px 12px;
-    background: #eee8d5;
-    color: #586e75;
+    background: var(--bg-alt);
+    color: var(--fg);
     font-weight: 600;
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    border-bottom: 2px solid #d3cdb8;
+    border-bottom: 2px solid var(--bg-border);
   }
   td {
     padding: 9px 12px;
-    border-bottom: 1px solid #eee8d5;
+    border-bottom: 1px solid var(--bg-alt);
     vertical-align: middle;
   }
-  tr:hover { background: #eee8d5; }
+  tr:hover { background: var(--bg-alt); }
   .badge-cell {
-    color: #d33682;
+    color: var(--magenta);
     font-weight: 700;
   }
-  .session-name { color: #586e75; }
-  .process-cell { color: #2aa198; font-weight: 500; }
-  .folder-cell { color: #b58900; font-size: 12px; }
+  .session-name { color: var(--fg); }
+  .process-cell { color: var(--cyan); font-weight: 500; }
+  .folder-cell { color: var(--yellow); font-size: 12px; }
   .session-id {
-    color: #93a1a1;
+    color: var(--fg-muted);
     font-size: 11px;
     max-width: 200px;
     overflow: hidden;
@@ -1080,16 +1095,16 @@ function getDashboardHTML() {
     border-radius: 50%;
     display: inline-block;
   }
-  .dot-running { background: #859900; }
-  .dot-missing { background: #dc322f; }
-  .dot-parked { background: #6c71c4; }
-  .dot-killed { background: #cb4b16; }
-  .dot-no-claude { background: #93a1a1; }
-  .status-running { color: #859900; }
-  .status-missing { color: #dc322f; }
-  .status-parked { color: #6c71c4; }
-  .status-killed { color: #cb4b16; }
-  .status-no-claude { color: #93a1a1; }
+  .dot-running { background: var(--green); }
+  .dot-missing { background: var(--red); }
+  .dot-parked { background: var(--violet); }
+  .dot-killed { background: var(--orange); }
+  .dot-no-claude { background: var(--fg-muted); }
+  .status-running { color: var(--green); }
+  .status-missing { color: var(--red); }
+  .status-parked { color: var(--violet); }
+  .status-killed { color: var(--orange); }
+  .status-no-claude { color: var(--fg-muted); }
   .btn {
     border: none;
     border-radius: 5px;
@@ -1099,34 +1114,28 @@ function getDashboardHTML() {
     font-size: 11px;
     font-weight: 600;
     transition: all 0.15s;
-    color: #fdf6e3;
+    color: var(--bg);
   }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .btn-focus {
-    background: #859900;
-  }
+  .btn-focus { background: var(--green); }
   .btn-focus:hover:not(:disabled) { opacity: 0.85; }
-  .btn-park {
-    background: #cb4b16;
-  }
+  .btn-park { background: var(--orange); }
   .btn-park:hover:not(:disabled) { opacity: 0.85; }
-  .btn-restore {
-    background: #268bd2;
-  }
+  .btn-restore { background: var(--blue); }
   .btn-restore:hover:not(:disabled) { opacity: 0.85; }
   .empty-state {
-    color: #93a1a1;
+    color: var(--fg-muted);
     padding: 24px;
     text-align: center;
     font-style: italic;
   }
-  .parked-at { color: #6c71c4; font-size: 12px; font-weight: 500; }
+  .parked-at { color: var(--violet); font-size: 12px; font-weight: 500; }
   .actions { white-space: nowrap; }
   .note-input {
     background: transparent;
     border: 1px solid transparent;
     border-radius: 4px;
-    color: #586e75;
+    color: var(--fg);
     font-family: inherit;
     font-size: 12px;
     padding: 3px 6px;
@@ -1137,7 +1146,7 @@ function getDashboardHTML() {
     background: transparent;
     border: 1px solid transparent;
     border-radius: 4px;
-    color: #d33682;
+    color: var(--magenta);
     font-family: inherit;
     font-size: 13px;
     font-weight: 700;
@@ -1145,17 +1154,17 @@ function getDashboardHTML() {
     width: 100%;
     min-width: 80px;
   }
-  .badge-input:hover { border-color: #d33682; }
+  .badge-input:hover { border-color: var(--magenta); }
   .badge-input:focus {
     outline: none;
-    border-color: #d33682;
-    background: #eee8d5;
+    border-color: var(--magenta);
+    background: var(--bg-alt);
   }
-  .note-input:hover { border-color: #2aa198; }
+  .note-input:hover { border-color: var(--cyan); }
   .note-input:focus {
     outline: none;
-    border-color: #268bd2;
-    background: #eee8d5;
+    border-color: var(--blue);
+    background: var(--bg-alt);
   }
   .new-session {
     display: flex;
@@ -1163,23 +1172,23 @@ function getDashboardHTML() {
     gap: 8px;
     margin-bottom: 16px;
   }
-  .new-session input {
-    background: #eee8d5;
-    border: 1px solid #93a1a1;
+  .new-session input, .new-session select {
+    background: var(--bg-alt);
+    border: 1px solid var(--fg-muted);
     border-radius: 5px;
-    color: #586e75;
+    color: var(--fg);
     font-family: inherit;
     font-size: 12px;
     padding: 5px 10px;
     width: 180px;
   }
-  .new-session input:focus {
+  .new-session input:focus, .new-session select:focus {
     outline: none;
-    border-color: #268bd2;
+    border-color: var(--blue);
   }
   .btn-new {
-    background: #268bd2;
-    color: #fdf6e3;
+    background: var(--blue);
+    color: var(--bg);
     border: none;
     border-radius: 5px;
     padding: 6px 14px;
@@ -1190,10 +1199,20 @@ function getDashboardHTML() {
   }
   .btn-new:hover { opacity: 0.85; }
   .btn-new:disabled { opacity: 0.4; cursor: not-allowed; }
-  .btn-delete {
-    background: #dc322f;
-  }
+  .btn-delete { background: var(--red); }
   .btn-delete:hover { opacity: 0.85; }
+  .theme-toggle {
+    background: var(--bg-alt);
+    border: 1px solid var(--fg-muted);
+    border-radius: 6px;
+    padding: 5px 12px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--fg);
+    line-height: 1;
+  }
+  .theme-toggle:hover { border-color: var(--blue); }
   .modal-overlay {
     display: none;
     position: fixed;
@@ -1205,25 +1224,25 @@ function getDashboardHTML() {
   }
   .modal-overlay.active { display: flex; }
   .modal {
-    background: #fdf6e3;
-    border: 2px solid #dc322f;
+    background: var(--bg);
+    border: 2px solid var(--red);
     border-radius: 8px;
     padding: 24px;
     max-width: 420px;
     width: 90%;
   }
   .modal h3 {
-    color: #dc322f;
+    color: var(--red);
     font-size: 15px;
     margin-bottom: 12px;
   }
   .modal p {
-    color: #586e75;
+    color: var(--fg);
     font-size: 13px;
     margin-bottom: 8px;
   }
   .modal .badge-name {
-    color: #d33682;
+    color: var(--magenta);
     font-weight: 700;
   }
   .modal-actions {
@@ -1232,13 +1251,9 @@ function getDashboardHTML() {
     justify-content: flex-end;
     margin-top: 20px;
   }
-  .btn-cancel {
-    background: #93a1a1;
-  }
+  .btn-cancel { background: var(--fg-muted); }
   .btn-cancel:hover { opacity: 0.85; }
-  .btn-confirm-delete {
-    background: #dc322f;
-  }
+  .btn-confirm-delete { background: var(--red); }
   .btn-confirm-delete:hover { opacity: 0.85; }
 </style>
 </head>
@@ -1253,6 +1268,7 @@ function getDashboardHTML() {
     <span id="session-counts"></span>
     <button class="refresh-btn" onclick="forceSnapshot()">Snapshot Now</button>
     <button class="refresh-btn" onclick="minimizeAll()">Minimize All</button>
+    <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Toggle light/dark">&#9789;</button>
   </div>
 </div>
 
@@ -1674,6 +1690,21 @@ async function importSessions() {
 
   btn.textContent = 'Import Sessions';
   btn.disabled = false;
+}
+
+function toggleTheme() {
+  const body = document.body;
+  const btn = document.getElementById('theme-btn');
+  body.classList.toggle('dark');
+  const isDark = body.classList.contains('dark');
+  btn.textContent = isDark ? '\\u2600' : '\\u263D';
+  localStorage.setItem('tt-theme', isDark ? 'dark' : 'light');
+}
+
+// Restore saved theme
+if (localStorage.getItem('tt-theme') === 'dark') {
+  document.body.classList.add('dark');
+  document.getElementById('theme-btn').textContent = '\\u2600';
 }
 
 // Initial load + auto-refresh
