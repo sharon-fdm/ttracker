@@ -1,8 +1,4 @@
-<p align="center">
-  <img src="https://claude.ai/favicon.ico" width="48" height="48" alt="Claude">
-  <br>
-  <strong style="font-size: 32px">ttracker</strong>
-</p>
+<h1 align="center">ttracker</h1>
 
 <p align="center">
   <strong>Never lose a Claude session again.</strong>
