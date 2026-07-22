@@ -1,3 +1,8 @@
+<p align="center">
+  <picture>
+    <img src="logo.svg" width="80" height="80" alt="ttracker logo">
+  </picture>
+</p>
 <h1 align="center">ttracker</h1>
 
 <p align="center">
