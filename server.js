@@ -1268,7 +1268,7 @@ function getDashboardHTML() {
     <span id="session-counts"></span>
     <button class="refresh-btn" onclick="forceSnapshot()">Snapshot Now</button>
     <button class="refresh-btn" onclick="minimizeAll()">Minimize All</button>
-    <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Toggle light/dark">&#9789; Light</button>
+    <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Toggle light/dark">&#9789; Dark</button>
   </div>
 </div>
 
@@ -1697,14 +1697,14 @@ function toggleTheme() {
   const btn = document.getElementById('theme-btn');
   body.classList.toggle('dark');
   const isDark = body.classList.contains('dark');
-  btn.innerHTML = isDark ? '&#9788; Dark' : '&#9789; Light';
+  btn.innerHTML = isDark ? '&#9788; Light' : '&#9789; Dark';
   localStorage.setItem('tt-theme', isDark ? 'dark' : 'light');
 }
 
 // Restore saved theme
 if (localStorage.getItem('tt-theme') === 'dark') {
   document.body.classList.add('dark');
-  document.getElementById('theme-btn').innerHTML = '&#9788; Dark';
+  document.getElementById('theme-btn').innerHTML = '&#9788; Light';
 }
 
 // Initial load + auto-refresh
