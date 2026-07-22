@@ -26,6 +26,7 @@ const SNAPSHOT_DIR = path.join(SCRIPT_DIR, 'snapshots');
 const STATE_FILE = path.join(SNAPSHOT_DIR, 'state.json');
 const PID_FILE = path.join(SNAPSHOT_DIR, 'daemon.pid');
 const CLAUDE_SESSIONS_DIR = path.join(os.homedir(), '.claude', 'sessions');
+const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
 
@@ -78,6 +79,34 @@ function writeJSON(filepath, data) {
 
 function now() {
   return new Date().toISOString().replace('T', ' ').slice(0, 19);
+}
+
+function projectDirToPath(dirName) {
+  // Convert "-Users-sharonkatz-repos-fleet" to "~/repos/fleet"
+  return dirName.replace(/^-Users-[^-]+-/, '~/').replace(/-/g, '/');
+}
+
+function getProjectDirs() {
+  try {
+    return fs.readdirSync(CLAUDE_PROJECTS_DIR)
+      .filter(d => {
+        const full = path.join(CLAUDE_PROJECTS_DIR, d);
+        return fs.statSync(full).isDirectory() && fs.readdirSync(full).some(f => f.endsWith('.jsonl'));
+      })
+      .map(d => ({ dir: d, label: projectDirToPath(d), count: fs.readdirSync(path.join(CLAUDE_PROJECTS_DIR, d)).filter(f => f.endsWith('.jsonl')).length }))
+      .sort((a, b) => b.count - a.count);
+  } catch { return []; }
+}
+
+function findProjectDir(claudeSessionId) {
+  // Find which project dir contains a given session's JSONL
+  try {
+    for (const d of fs.readdirSync(CLAUDE_PROJECTS_DIR)) {
+      const jsonl = path.join(CLAUDE_PROJECTS_DIR, d, `${claudeSessionId}.jsonl`);
+      if (fs.existsSync(jsonl)) return d;
+    }
+  } catch {}
+  return null;
 }
 
 // ─── State Management ────────────────────────────────────────────────────────
@@ -191,7 +220,8 @@ async function takeSnapshot() {
       // Get last activity time from JSONL file modification time
       let lastActive = '';
       if (claudeSessionId) {
-        const jsonlFile = path.join(os.homedir(), '.claude', 'projects', '-Users-sharonkatz-repos-fleet', `${claudeSessionId}.jsonl`);
+        const projDir = findProjectDir(claudeSessionId);
+        const jsonlFile = projDir ? path.join(CLAUDE_PROJECTS_DIR, projDir, `${claudeSessionId}.jsonl`) : '';
         try {
           const stat = fs.statSync(jsonlFile);
           lastActive = stat.mtime.toISOString().replace('T', ' ').slice(0, 16);
@@ -576,7 +606,7 @@ async function handleAPI(req, res) {
 
     const state = loadState();
     const results = [];
-    const projectDir = path.join(os.homedir(), '.claude', 'projects', '-Users-sharonkatz-repos-fleet');
+    const projectDir = CLAUDE_PROJECTS_DIR;
 
     // Build list of all sessions to search
     const allSessions = [];
@@ -615,7 +645,8 @@ async function handleAPI(req, res) {
       // Skip if already found in surface
       if (results.some(r => r.claude_session_id === s.claude_session_id)) continue;
 
-      const jsonlFile = path.join(projectDir, `${s.claude_session_id}.jsonl`);
+      const projDir = findProjectDir(s.claude_session_id);
+      const jsonlFile = projDir ? path.join(CLAUDE_PROJECTS_DIR, projDir, `${s.claude_session_id}.jsonl`) : '';
       try {
         if (!fs.existsSync(jsonlFile)) continue;
         const lines = fs.readFileSync(jsonlFile, 'utf8').split('\n');
@@ -648,6 +679,99 @@ async function handleAPI(req, res) {
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ results, phase: 'deep', done: true, searched: allSessions.length }));
+    return;
+  }
+
+  // GET /api/projects
+  if (req.method === 'GET' && url.pathname === '/api/projects') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(getProjectDirs()));
+    return;
+  }
+
+  // POST /api/import-sessions
+  if (req.method === 'POST' && url.pathname === '/api/import-sessions') {
+    const body = await new Promise((resolve) => {
+      let data = '';
+      req.on('data', c => data += c);
+      req.on('end', () => resolve(data));
+    });
+    const { projectDir } = JSON.parse(body);
+    const fullDir = path.join(CLAUDE_PROJECTS_DIR, projectDir);
+    if (!fs.existsSync(fullDir)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Project not found' }));
+      return;
+    }
+
+    const state = loadState();
+    const existingIds = new Set([
+      ...state.snapshot.sessions.filter(s => s.claude_session_id).map(s => s.claude_session_id),
+      ...state.history.filter(h => h.claude_session_id).map(h => h.claude_session_id)
+    ]);
+
+    const files = fs.readdirSync(fullDir).filter(f => f.endsWith('.jsonl'));
+    let imported = 0;
+    const friendlyPath = projectDirToPath(projectDir);
+
+    for (const f of files) {
+      const sid = f.replace('.jsonl', '');
+      if (existingIds.has(sid)) continue;
+
+      const jsonlPath = path.join(fullDir, f);
+      const mtime = fs.statSync(jsonlPath).mtime;
+      const parkedAt = mtime.toISOString().replace('T', ' ').slice(0, 16);
+
+      // Extract first user message as topic
+      let topic = '';
+      try {
+        const content = fs.readFileSync(jsonlPath, 'utf8');
+        for (const line of content.split('\n')) {
+          if (!line.trim()) continue;
+          try {
+            const obj = JSON.parse(line);
+            if (obj.type === 'user') {
+              const msg = obj.message?.content || '';
+              let text = '';
+              if (typeof msg === 'string') text = msg;
+              else if (Array.isArray(msg)) {
+                text = msg.filter(c => c.type === 'text').map(c => c.text).join(' ');
+              }
+              text = text.replace(/<[^>]+>/g, '').trim();
+              if (text.length > 5) {
+                topic = text.substring(0, 80).replace(/\n/g, ' ');
+                break;
+              }
+            }
+          } catch {}
+        }
+      } catch {}
+
+      // Generate badge from topic
+      let badge = '';
+      const ticketMatch = topic.match(/(?:solve|fix|review|reproduce|spec|#)\s*(\d{4,5})/i);
+      if (ticketMatch) badge = ticketMatch[1];
+      else if (topic.length > 0) {
+        const words = topic.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/)
+          .filter(w => w.length > 3 && !['this','that','what','with','from','have','just','want','need','please','here'].includes(w));
+        badge = words[0] || '';
+      }
+
+      state.history.push({
+        claude_session_id: sid,
+        badge,
+        session_name: topic || '(no topic)',
+        cwd: friendlyPath.replace('~', os.homedir()),
+        parked_at: parkedAt,
+        window_id: 0, tab: 1, session: 1,
+        iterm_uuid: '', tty: '', process: 'claude'
+      });
+      imported++;
+    }
+
+    saveState(state);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, imported, total: files.length, skipped: files.length - imported }));
     return;
   }
 
@@ -1160,6 +1284,14 @@ function getDashboardHTML() {
   </table>
 </div>
 
+<div class="new-session">
+  <select id="import-project" style="background:#eee8d5;border:1px solid #93a1a1;border-radius:5px;color:#586e75;font-family:inherit;font-size:12px;padding:5px 10px;min-width:250px">
+    <option value="">Loading projects...</option>
+  </select>
+  <button id="import-btn" class="btn-new" style="background:#b58900" onclick="importSessions()">Import Sessions</button>
+  <span id="import-status" style="color:#93a1a1;font-size:12px;margin-left:8px"></span>
+</div>
+
 <h2>Active Sessions <span class="count" id="active-count"></span></h2>
 <table>
   <thead>
@@ -1501,8 +1633,52 @@ async function restoreFromHistory(sessionId) {
   await refresh();
 }
 
+async function loadProjects() {
+  try {
+    const res = await fetch(API + '/api/projects');
+    const projects = await res.json();
+    const sel = document.getElementById('import-project');
+    sel.innerHTML = projects.map(p =>
+      '<option value="' + escapeHtml(p.dir) + '">' + escapeHtml(p.label) + ' (' + p.count + ' sessions)</option>'
+    ).join('');
+  } catch {}
+}
+
+async function importSessions() {
+  const sel = document.getElementById('import-project');
+  const btn = document.getElementById('import-btn');
+  const status = document.getElementById('import-status');
+  const projectDir = sel.value;
+  if (!projectDir) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Importing...';
+  status.textContent = '';
+
+  try {
+    const res = await fetch(API + '/api/import-sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      status.textContent = 'Imported ' + data.imported + ' new sessions (' + data.skipped + ' already tracked).';
+      await refresh();
+    } else {
+      status.textContent = 'Error: ' + data.error;
+    }
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+
+  btn.textContent = 'Import Sessions';
+  btn.disabled = false;
+}
+
 // Initial load + auto-refresh
 refresh();
+loadProjects();
 refreshTimer = setInterval(refresh, 5000);
 </script>
 
