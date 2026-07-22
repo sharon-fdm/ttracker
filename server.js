@@ -244,10 +244,12 @@ async function takeSnapshot() {
 
     // Update state, preserving missing sessions from previous snapshot
     const liveUuids = new Set(sessions.map(s => s.iterm_uuid));
+    const liveSessionIds = new Set(sessions.filter(s => s.claude_session_id).map(s => s.claude_session_id));
     const parkedIds = new Set(state.history.map(h => h.claude_session_id || h.iterm_uuid));
     if (state.snapshot && state.snapshot.sessions) {
       for (const prev of state.snapshot.sessions) {
         if (liveUuids.has(prev.iterm_uuid)) continue;
+        if (prev.claude_session_id && liveSessionIds.has(prev.claude_session_id)) continue;
         const key = prev.claude_session_id || prev.iterm_uuid;
         if (parkedIds.has(key)) continue;
         // Keep Claude sessions as missing
