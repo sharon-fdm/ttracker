@@ -844,7 +844,7 @@ function getDashboardHTML() {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='16' fill='%23268bd2'/><text x='50' y='68' font-family='monospace' font-size='54' font-weight='bold' fill='%23fdf6e3' text-anchor='middle'>tt</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='16' fill='%23fdf6e3'/><text x='26' y='72' font-family='monospace' font-size='58' font-weight='bold' fill='%23268bd2'>t</text><text x='54' y='72' font-family='monospace' font-size='58' font-weight='bold' fill='%232aa198'>t</text></svg>">
 <title>ttracker</title>
 <style>
   /* Solarized Light - full palette
