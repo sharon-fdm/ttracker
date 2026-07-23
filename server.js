@@ -1401,10 +1401,13 @@ function renderActive(data) {
   }
 
   el.innerHTML = sessions.map((s, i) => {
+    const isTtracker = s.session_name.includes('server.js') || (s.badge || '').toLowerCase() === 'ttracker';
     let action = '';
     if (s.status === 'running' || s.status === 'no-claude') {
-      action = '<button class="btn btn-focus" onclick="focusSession(\\'' + s.iterm_uuid + '\\')">Focus</button>'
-        + ' <button class="btn btn-park" onclick="parkSession(\\'' + s.iterm_uuid + '\\')">Park</button>';
+      action = '<button class="btn btn-focus" onclick="focusSession(\\'' + s.iterm_uuid + '\\')">Focus</button>';
+      if (!isTtracker) {
+        action += ' <button class="btn btn-park" onclick="parkSession(\\'' + s.iterm_uuid + '\\')">Park</button>';
+      }
     } else if (s.status === 'missing') {
       action = '<button class="btn btn-restore" onclick="restoreSession(\\'' + s.claude_session_id + '\\')">Restore</button>'
         + ' <button class="btn btn-park" onclick="parkMissing(\\'' + s.claude_session_id + '\\')">Park</button>';
