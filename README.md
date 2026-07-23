@@ -46,6 +46,30 @@ source ~/.zshrc
 ```
 Then just type `ttracker`.
 
+## Getting Started
+
+Once the server is running and the dashboard is open:
+
+### 1. Pick up your live terminals
+
+Click **Snapshot Now**. ttracker scans all open iTerm2 windows and populates the **Active Sessions** table. Every terminal running Claude Code is automatically detected with its session ID, badge, folder, and process.
+
+### 2. Import your history
+
+Already have past Claude sessions on disk? Use the **Import Sessions** dropdown at the top of the dashboard. Select a project folder (e.g. `~/repos/fleet`) and click **Import Sessions**. ttracker scans `~/.claude/projects/` for all JSONL session files, extracts the topic from the first message, generates a badge, and adds them to the **Parked Sessions** table. Sessions already tracked are skipped.
+
+### 3. Keep it running
+
+Leave the server running in a terminal. It snapshots every 10 minutes in the background. If a terminal dies or your Mac restarts, the missing sessions appear with a red dot and a **Restore** button. Click it to reopen the terminal with its badge and `claude --resume`.
+
+### 4. Day-to-day workflow
+
+- **Starting work:** Open the dashboard, click **Focus** to jump to a session, or **+ New Claude Session** to start fresh
+- **Switching context:** Use **Focus** buttons to hop between terminals, or **Minimize All** to clear the screen
+- **Done with a session:** Click **Park** to close it and save to history. You can restore it anytime
+- **Finding old work:** Use **Search** to find any session by keyword across all conversations
+- **Adding context:** Edit badges and notes directly in the table to remind yourself what each session is for
+
 ## Features
 
 ### Dashboard
@@ -55,7 +79,7 @@ Then just type `ttracker`.
 | **Active Sessions** | Live table of all open terminals with status indicators |
 | **Parked Sessions** | Terminals you intentionally closed, saved for later |
 | **Auto-refresh** | Dashboard updates every 5 seconds |
-| **Solarized Light** | Clean, readable theme using the full solarized palette |
+| **Solarized theme** | Light and dark modes with one-click toggle. Preference saved |
 
 ### Session Management
 
