@@ -42,6 +42,35 @@ You have 10 Claude Code sessions open across iTerm2 windows. Your Mac restarts. 
   <em>Solarized dark theme</em>
 </p>
 
+<details>
+<summary><strong>More screenshots</strong></summary>
+
+<p align="center">
+  <img src="screenshots/header.png" alt="Header with snapshot controls" width="500">
+  <br>
+  <em>Snapshot Now, Minimize All, and theme toggle</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/toolbar.png" alt="New session, search, and import" width="400">
+  <br>
+  <em>Create sessions, search conversations, import history</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/active-sessions.png" alt="Active sessions table" width="800">
+  <br>
+  <em>Active sessions with status, notes, and actions</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/parked-sessions.png" alt="Parked sessions table" width="800">
+  <br>
+  <em>Parked sessions ready to restore</em>
+</p>
+
+</details>
+
 ## Quick Start
 
 **1.** Clone and start:
