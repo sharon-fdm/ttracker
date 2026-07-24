@@ -30,6 +30,18 @@ You have 10 Claude Code sessions open across iTerm2 windows. Your Mac restarts. 
 
 **ttracker** snapshots your terminal sessions every 10 minutes and gives you a web dashboard to restore them all with one click.
 
+<p align="center">
+  <img src="screenshots/dashboard-light.png" alt="ttracker dashboard - light mode" width="800">
+  <br>
+  <em>Solarized light theme</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/dashboard-dark.png" alt="ttracker dashboard - dark mode" width="800">
+  <br>
+  <em>Solarized dark theme</em>
+</p>
+
 ## Quick Start
 
 **1.** Clone and start:
