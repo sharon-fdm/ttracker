@@ -257,7 +257,9 @@ async function takeSnapshot() {
           // zsh history format: ": timestamp:0;command" or just "command"
           const match = l.match(/^:\s*\d+:\d+;(.+)/);
           return match ? match[1] : l;
-        }).filter(l => l && !l.startsWith('fc '));
+        }).filter(l => l && !l.startsWith('fc ')
+          && !l.includes('tt-restore') && !l.includes('tt-hist')
+          && !l.includes('SetBadgeFormat') && !l.includes('source /var/folders'));
         for (const sess of sessions) {
           if (!sess.claude_session_id && (sess.process === '-zsh' || sess.process === 'bash' || sess.process === 'zsh')) {
             state.notes[`hist:${sess.iterm_uuid}`] = cmds;
@@ -474,9 +476,12 @@ async function restoreSession(sessionId, fromHistory) {
 
   const cwd = (session.cwd || os.homedir()).replace(/'/g, "'\\''");
   const badgeB64 = Buffer.from(session.badge || '').toString('base64');
-  const badgeLine = badgeB64
-    ? `write text "printf '\\\\e]1337;SetBadgeFormat=%s\\\\a' '${badgeB64}'"\n        delay 2`
-    : '';
+
+  // Filter ttracker noise from command history
+  const noisePatterns = ['source /var/folders', 'tt-restore', 'tt-hist', 'SetBadgeFormat', 'printf.*1337', 'rm -f /var/folders'];
+  const cleanHistory = (session.cmd_history || []).filter(cmd => {
+    return !noisePatterns.some(p => cmd.includes(p) || cmd.match(new RegExp(p)));
+  });
 
   // Build the command to run after cd + badge
   let launchCmd;
@@ -488,37 +493,47 @@ async function restoreSession(sessionId, fromHistory) {
     launchCmd = '';
   }
 
-  // Write a shell script that does cd, badge, launch, and optionally prints history
-  // This avoids all AppleScript escaping issues
-  const restoreScript = path.join(os.tmpdir(), `tt-restore-${Date.now()}.sh`);
-  const lines = ['#!/bin/bash', `cd '${cwd}'`];
-  if (badgeB64) {
-    lines.push(`printf '\\e]1337;SetBadgeFormat=%s\\a' '${badgeB64}'`);
-    lines.push('sleep 1');
+  // For non-Claude sessions with history, write a display script
+  let histFile = '';
+  if (!launchCmd && cleanHistory.length) {
+    histFile = path.join(os.tmpdir(), `tt-hist-display-${Date.now()}.txt`);
+    fs.writeFileSync(histFile, cleanHistory.join('\n'));
   }
-  if (!launchCmd && session.cmd_history && session.cmd_history.length) {
-    const histFile = path.join(os.tmpdir(), `tt-hist-display-${Date.now()}.txt`);
-    fs.writeFileSync(histFile, session.cmd_history.join('\n'));
-    lines.push('echo ""');
-    lines.push(`printf '\\033[1;36m--- Last commands before parking ---\\033[0m\\n'`);
-    lines.push(`cat ${histFile}`);
-    lines.push(`printf '\\033[1;36m------\\033[0m\\n'`);
-    lines.push('echo ""');
-    lines.push(`rm -f ${histFile}`);
-  }
-  if (launchCmd) {
-    lines.push(launchCmd);
-  }
-  fs.writeFileSync(restoreScript, lines.join('\n') + '\n');
-  fs.chmodSync(restoreScript, '755');
 
+  // Open a new window, wait for shell to be ready, then set badge via TTY
+  // and run commands via write text
   const tmpFile = path.join(os.tmpdir(), `tt-restore-${Date.now()}.applescript`);
+  let commands = [`write text "cd '${cwd}' && clear"`];
+  if (launchCmd) {
+    commands.push(`delay 1`);
+    commands.push(`write text "${launchCmd}"`);
+  } else if (histFile) {
+    commands.push(`delay 0.5`);
+    commands.push(`write text "printf '\\\\033[1;36m--- Last commands before parking ---\\\\033[0m'; cat ${histFile}; printf '\\\\033[1;36m------\\\\033[0m'; echo ''; rm -f ${histFile}"`);
+  }
+
   fs.writeFileSync(tmpFile, `tell application "iTerm2"
     set newWindow to (create window with default profile)
     tell current session of current tab of newWindow
-        write text "source ${restoreScript} && rm -f ${restoreScript}"
+        ${commands.join('\n        ')}
     end tell
+    return tty of current session of current tab of newWindow
 end tell`);
+
+  let newTty = '';
+  try {
+    newTty = await runOsascriptFile(tmpFile);
+  } catch (err) {
+    return { ok: false, error: err.message };
+  } finally {
+    try { fs.unlinkSync(tmpFile); } catch {}
+  }
+
+  // Set badge via direct TTY write (silent, no visible command)
+  if (badgeB64 && newTty) {
+    await new Promise(r => setTimeout(r, 1000));
+    try { fs.writeFileSync(newTty, `\x1b]1337;SetBadgeFormat=${badgeB64}\x07`); } catch {}
+  }
 
   try {
     await runOsascriptFile(tmpFile);
