@@ -12,7 +12,11 @@
 </p>
 
 <p align="center">
-  macOS only &middot; iTerm2 &middot; Zero dependencies
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/platform-macOS-lightgrey.svg" alt="macOS">
+  <img src="https://img.shields.io/badge/terminal-iTerm2-green.svg" alt="iTerm2">
+  <img src="https://img.shields.io/badge/dependencies-zero-brightgreen.svg" alt="Zero Dependencies">
+  <img src="https://img.shields.io/badge/node-%3E%3D18-blue.svg" alt="Node >= 18">
   <br><br>
   <a href="#quick-start">Quick Start</a> &middot;
   <a href="#features">Features</a> &middot;
