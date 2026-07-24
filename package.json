@@ -1,0 +1,39 @@
+{
+  "name": "session-tracker",
+  "version": "1.0.0",
+  "description": "Terminal session tracker for iTerm2 + Claude Code. Web dashboard to manage, park, restore, and search Claude sessions.",
+  "main": "server.js",
+  "bin": {
+    "session-tracker": "./server.js",
+    "ttracker": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "iterm2",
+    "claude",
+    "claude-code",
+    "terminal",
+    "session-manager",
+    "macos",
+    "applescript",
+    "developer-tools"
+  ],
+  "author": "Sharon Katz",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sharon-fdm/ttracker.git"
+  },
+  "homepage": "https://github.com/sharon-fdm/ttracker",
+  "bugs": {
+    "url": "https://github.com/sharon-fdm/ttracker/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin"
+  ]
+}
