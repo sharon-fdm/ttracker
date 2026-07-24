@@ -98,6 +98,63 @@ function getProjectDirs() {
   } catch { return []; }
 }
 
+function generateBadge(topic) {
+  if (!topic) return '';
+  const t = topic.toLowerCase();
+
+  // 1. Ticket/issue numbers (highest priority)
+  const ticketMatch = t.match(/(?:solve|fix|review|reproduce|spec|issue|#|\/issues\/|\/pull\/)\s*(\d{4,5})/i);
+  if (ticketMatch) return ticketMatch[1];
+
+  // 2. PR numbers
+  const prMatch = t.match(/(?:pr|pull)[/ #]*(\d{4,5})/i);
+  if (prMatch) return 'pr-' + prMatch[1];
+
+  // 3. Confidential issues
+  const confMatch = t.match(/confidential.*?(\d{4,5})/);
+  if (confMatch) return 'conf-' + confMatch[1];
+
+  // 4. Action + subject patterns
+  const actionPatterns = [
+    [/review\s+(\w+)/i, (m) => 'review-' + m[1].substring(0, 8)],
+    [/fix\s+(\w+)/i, (m) => 'fix-' + m[1].substring(0, 8)],
+    [/reproduce\s+(\w+)/i, (m) => 'repro-' + m[1].substring(0, 8)],
+    [/spec\s+(\w+)/i, (m) => 'spec-' + m[1].substring(0, 8)],
+    [/create\s+(\w+)/i, (m) => 'create-' + m[1].substring(0, 8)],
+    [/add\s+(\w+)/i, (m) => 'add-' + m[1].substring(0, 8)],
+    [/update\s+(\w+)/i, (m) => 'update-' + m[1].substring(0, 8)],
+  ];
+  for (const [pattern, fn] of actionPatterns) {
+    const m = t.match(pattern);
+    if (m) return fn(m);
+  }
+
+  // 5. Known topic keywords
+  const keywords = {
+    'ci': 'ci-fix', 'failing': 'ci-fix', 'lint': 'lint',
+    'dark mode': 'dark-mode', 'dark-mode': 'dark-mode',
+    'release': 'release', 'cutting': 'release',
+    'demo': 'demo', 'interview': 'interview',
+    'datadog': 'datadog', 'grafana': 'grafana',
+    'slack': 'slack', 'handbook': 'handbook',
+    'security': 'security', 'vuln': 'vuln',
+    'disk': 'disk-cleanup', 'cleanup': 'cleanup',
+    'config': 'config', 'migration': 'migration',
+  };
+  for (const [key, badge] of Object.entries(keywords)) {
+    if (t.includes(key)) return badge;
+  }
+
+  // 6. First two meaningful words
+  const stopwords = new Set(['this','that','what','with','from','have','just','want','need','please','here','the','and','for','can','you','are','about','how','all','there','been','will','would','could','should','also','into','some','them','were','does','look','tell','make','like','know']);
+  const words = t.replace(/[^a-z0-9\s]/g, '').split(/\s+/)
+    .filter(w => w.length > 2 && !stopwords.has(w));
+  if (words.length >= 2) return words[0].substring(0, 8) + '-' + words[1].substring(0, 6);
+  if (words.length === 1) return words[0].substring(0, 12);
+
+  return '';
+}
+
 function findProjectDir(claudeSessionId) {
   // Find which project dir contains a given session's JSONL
   try {
@@ -763,13 +820,19 @@ async function handleAPI(req, res) {
       } catch {}
 
       // Generate badge from topic
-      let badge = '';
-      const ticketMatch = topic.match(/(?:solve|fix|review|reproduce|spec|#)\s*(\d{4,5})/i);
-      if (ticketMatch) badge = ticketMatch[1];
-      else if (topic.length > 0) {
-        const words = topic.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/)
-          .filter(w => w.length > 3 && !['this','that','what','with','from','have','just','want','need','please','here'].includes(w));
-        badge = words[0] || '';
+      let badge = generateBadge(topic);
+      // Disambiguate if badge already exists
+      const existingBadges = state.history.map(h => h.badge);
+      if (badge && existingBadges.includes(badge)) {
+        // Try adding a word from the topic
+        const extra = topic.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/)
+          .filter(w => w.length > 2 && w !== badge && !['this','that','what','with','from','have','just','want','need','please','here','the','and','for'].includes(w));
+        if (extra.length > 1) {
+          badge = badge + '-' + extra[1].substring(0, 8);
+        } else {
+          // Append date fragment
+          badge = badge + '-' + parkedAt.slice(5, 10).replace(' ', '');
+        }
       }
 
       state.history.push({
