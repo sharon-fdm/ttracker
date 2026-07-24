@@ -32,25 +32,20 @@ You have 10 Claude Code sessions open across iTerm2 windows. Your Mac restarts. 
 
 ## Quick Start
 
-### Option A: npx (no install)
-
-```bash
-npx session-tracker
-```
-
-### Option B: Clone
-
+**1.** Clone and start:
 ```bash
 git clone https://github.com/sharon-fdm/ttracker.git
 cd ttracker
 node server.js
 ```
 
-Then open **http://localhost:3847** in your browser and bookmark it.
+**2.** Open in your browser: **http://localhost:3847**
+
+**3.** Bookmark it. The port never changes.
 
 **Optional:** Add an alias for instant access:
 ```bash
-echo "alias ttracker='npx session-tracker'" >> ~/.zshrc
+echo "alias ttracker='node ~/repos/ttracker/server.js'" >> ~/.zshrc
 source ~/.zshrc
 ```
 Then just type `ttracker`.
