@@ -897,24 +897,58 @@ end tell`);
       res.end(JSON.stringify({ ok: false, error: 'Session not found' }));
       return;
     }
-    // Restore as a non-Claude session (restoreSession handles it)
-    const fakeSession = { ...session, claude_session_id: '' };
-    // Temporarily put it in history so restoreSession can find it
-    state.history.push({
-      ...fakeSession,
-      parked_at: new Date().toISOString().replace('T', ' ').slice(0, 16)
-    });
+
+    // Open new terminal with badge, cd, and history display
+    const cwd = (session.cwd || os.homedir()).replace(/'/g, "'\\''");
+    const badgeB64 = Buffer.from(session.badge || '').toString('base64');
+    const noisePatterns = ['source /var/folders', 'tt-restore', 'tt-hist', 'SetBadgeFormat', 'printf.*1337', 'rm -f /var/folders'];
+    const cleanHistory = (session.cmd_history || []).filter(cmd =>
+      !noisePatterns.some(p => cmd.includes(p) || cmd.match(new RegExp(p))));
+
+    let histFile = '';
+    if (cleanHistory.length) {
+      histFile = path.join(os.tmpdir(), `tt-hist-display-${Date.now()}.txt`);
+      fs.writeFileSync(histFile, cleanHistory.join('\n'));
+    }
+
+    const commands = [`write text "cd '${cwd}' && clear"`];
+    if (histFile) {
+      commands.push('delay 0.5');
+      commands.push(`write text "printf '\\\\033[1;36m--- Last commands before parking ---\\\\033[0m'; cat ${histFile}; printf '\\\\033[1;36m------\\\\033[0m'; echo ''; rm -f ${histFile}"`);
+    }
+
+    const tmpFile = path.join(os.tmpdir(), `tt-restore-${Date.now()}.applescript`);
+    fs.writeFileSync(tmpFile, `tell application "iTerm2"
+    set newWindow to (create window with default profile)
+    tell current session of current tab of newWindow
+        ${commands.join('\n        ')}
+    end tell
+    return tty of current session of current tab of newWindow
+end tell`);
+
+    let newTty = '';
+    try {
+      newTty = await runOsascriptFile(tmpFile);
+    } finally {
+      try { fs.unlinkSync(tmpFile); } catch {}
+    }
+
+    if (badgeB64 && newTty) {
+      await new Promise(r => setTimeout(r, 1000));
+      try { fs.writeFileSync(newTty, `\x1b]1337;SetBadgeFormat=${badgeB64}\x07`); } catch {}
+    }
+
+    // Remove from snapshot and clean up
+    state.snapshot.sessions = state.snapshot.sessions.filter(s => s.iterm_uuid !== uuid);
+    state.snapshot.session_count = state.snapshot.sessions.length;
+    delete state.notes[`hist:${uuid}`];
     saveState(state);
-    const result = await restoreSession(uuid, true);
-    // Remove from snapshot
-    const freshState = loadState();
-    freshState.snapshot.sessions = freshState.snapshot.sessions.filter(s => s.iterm_uuid !== uuid);
-    freshState.snapshot.session_count = freshState.snapshot.sessions.length;
-    // Clean up saved history note
-    delete freshState.notes[`hist:${uuid}`];
-    saveState(freshState);
-    res.writeHead(result.ok ? 200 : 400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(result));
+
+    await new Promise(r => setTimeout(r, 3000));
+    await takeSnapshot();
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
     return;
   }
 
