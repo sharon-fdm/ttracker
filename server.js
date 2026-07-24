@@ -887,6 +887,37 @@ end tell`);
     return;
   }
 
+  // POST /api/restore-killed/:iterm_uuid (restore a killed non-Claude session)
+  if (req.method === 'POST' && pathParts[0] === 'api' && pathParts[1] === 'restore-killed' && pathParts[2]) {
+    const uuid = decodeURIComponent(pathParts[2]);
+    const state = loadState();
+    const session = state.snapshot.sessions.find(s => s.iterm_uuid === uuid);
+    if (!session) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Session not found' }));
+      return;
+    }
+    // Restore as a non-Claude session (restoreSession handles it)
+    const fakeSession = { ...session, claude_session_id: '' };
+    // Temporarily put it in history so restoreSession can find it
+    state.history.push({
+      ...fakeSession,
+      parked_at: new Date().toISOString().replace('T', ' ').slice(0, 16)
+    });
+    saveState(state);
+    const result = await restoreSession(uuid, true);
+    // Remove from snapshot
+    const freshState = loadState();
+    freshState.snapshot.sessions = freshState.snapshot.sessions.filter(s => s.iterm_uuid !== uuid);
+    freshState.snapshot.session_count = freshState.snapshot.sessions.length;
+    // Clean up saved history note
+    delete freshState.notes[`hist:${uuid}`];
+    saveState(freshState);
+    res.writeHead(result.ok ? 200 : 400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
+    return;
+  }
+
   // DELETE /api/delete-history/:claude_session_id
   if (req.method === 'DELETE' && pathParts[0] === 'api' && pathParts[1] === 'delete-history' && pathParts[2]) {
     const sid = decodeURIComponent(pathParts[2]);
@@ -1427,7 +1458,7 @@ function renderActive(data) {
       action = '<button class="btn btn-restore" onclick="restoreSession(\\'' + s.claude_session_id + '\\')">Restore</button>'
         + ' <button class="btn btn-park" onclick="parkMissing(\\'' + s.claude_session_id + '\\')">Park</button>';
     } else if (s.status === 'killed') {
-      action = '<button class="btn btn-restore" onclick="restoreFromHistory(\\'' + s.iterm_uuid + '\\')">Restore</button>'
+      action = '<button class="btn btn-restore" onclick="restoreKilled(\\'' + s.iterm_uuid + '\\')">Restore</button>'
         + ' <button class="btn btn-park" onclick="parkMissing(\\'' + s.iterm_uuid + '\\')">Park</button>';
     }
     const noteKey = s.claude_session_id || s.iterm_uuid;
@@ -1664,6 +1695,11 @@ async function restoreSession(sessionId) {
 
 async function restoreFromHistory(sessionId) {
   await fetch(API + '/api/restore-history/' + encodeURIComponent(sessionId), { method: 'POST' });
+  await refresh();
+}
+
+async function restoreKilled(itermUuid) {
+  await fetch(API + '/api/restore-killed/' + encodeURIComponent(itermUuid), { method: 'POST' });
   await refresh();
 }
 
