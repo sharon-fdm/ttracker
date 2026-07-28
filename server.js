@@ -1491,6 +1491,18 @@ function getDashboardHTML() {
   </div>
 </div>
 
+<div id="park-modal" class="modal-overlay">
+  <div class="modal" style="border-color: var(--orange)">
+    <h3 style="color: var(--orange)">Park Session</h3>
+    <p>This will close the terminal for <span class="badge-name" id="park-modal-badge"></span> and save it to the parked list.</p>
+    <p>You can restore it anytime from the Parked Sessions table.</p>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeParkModal()">Cancel</button>
+      <button class="btn btn-park" id="park-modal-confirm">Park</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const API = '';
 let refreshTimer;
@@ -1541,7 +1553,7 @@ function renderActive(data) {
     if (s.status === 'running' || s.status === 'no-claude') {
       action = '<button class="btn btn-focus" onclick="focusSession(\\'' + s.iterm_uuid + '\\')">Focus</button>';
       if (!isTtracker) {
-        action += ' <button class="btn btn-park" onclick="parkSession(\\'' + s.iterm_uuid + '\\')">Park</button>';
+        action += ' <button class="btn btn-park" onclick="parkSession(\\'' + s.iterm_uuid + '\\', \\'' + escapeHtml(s.badge) + '\\')">Park</button>';
       }
     } else if (s.status === 'missing') {
       action = '<button class="btn btn-restore" onclick="restoreSession(\\'' + s.claude_session_id + '\\')">Restore</button>'
@@ -1766,10 +1778,19 @@ async function focusSession(itermUuid) {
   await fetch(API + '/api/focus/' + encodeURIComponent(itermUuid), { method: 'POST' });
 }
 
-async function parkSession(itermUuid) {
-  if (!confirm('Park this session and close the terminal?')) return;
-  await fetch(API + '/api/park/' + encodeURIComponent(itermUuid), { method: 'POST' });
-  await refresh();
+function parkSession(itermUuid, badge) {
+  const modal = document.getElementById('park-modal');
+  document.getElementById('park-modal-badge').textContent = badge || itermUuid.slice(0, 12) + '...';
+  document.getElementById('park-modal-confirm').onclick = async function() {
+    closeParkModal();
+    await fetch(API + '/api/park/' + encodeURIComponent(itermUuid), { method: 'POST' });
+    await refresh();
+  };
+  modal.classList.add('active');
+}
+
+function closeParkModal() {
+  document.getElementById('park-modal').classList.remove('active');
 }
 
 async function parkMissing(sessionId) {
