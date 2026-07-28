@@ -592,14 +592,6 @@ end tell`);
     try { fs.writeFileSync(newTty, `\x1b]1337;SetBadgeFormat=${badgeB64}\x07`); } catch {}
   }
 
-  try {
-    await runOsascriptFile(tmpFile);
-  } catch (err) {
-    return { ok: false, error: err.message };
-  } finally {
-    try { fs.unlinkSync(tmpFile); } catch {}
-  }
-
   // Remove from history only after successful restore
   if (fromHistory && historyIdx >= 0) {
     const freshState = loadState();
