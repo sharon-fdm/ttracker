@@ -1449,7 +1449,7 @@ function getDashboardHTML() {
       <tr>
         <th>Location</th>
         <th>Name</th>
-        <th>Session Name</th>
+        <th>Description</th>
         <th>Match</th>
         <th>Action</th>
       </tr>
@@ -1472,7 +1472,7 @@ function getDashboardHTML() {
     <tr>
       <th style="width:50px">#</th>
       <th>Name</th>
-      <th>Session Name</th>
+      <th>Description</th>
       <th>Folder</th>
       <th>Note</th>
       <th>Process</th>
@@ -1490,7 +1490,7 @@ function getDashboardHTML() {
     <tr>
       <th style="width:50px">#</th>
       <th>Name</th>
-      <th>Session Name</th>
+      <th>Description</th>
       <th>Folder</th>
       <th>Note</th>
       <th>Claude Session</th>
