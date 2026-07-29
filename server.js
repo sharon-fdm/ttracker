@@ -1441,8 +1441,8 @@ function getDashboardHTML() {
   }
   .sticky {
     position: absolute;
-    width: 160px;
-    min-height: 60px;
+    min-width: 100px;
+    min-height: 50px;
     padding: 20px 10px 10px;
     border-radius: 3px;
     font-size: 12px;
@@ -1452,6 +1452,26 @@ function getDashboardHTML() {
     color: #fdf6e3;
   }
   .sticky:active { cursor: grabbing; }
+  .sticky-resize {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 14px;
+    height: 14px;
+    cursor: nwse-resize;
+    opacity: 0.3;
+  }
+  .sticky-resize::after {
+    content: '';
+    position: absolute;
+    bottom: 3px;
+    right: 3px;
+    width: 6px;
+    height: 6px;
+    border-right: 2px solid #fdf6e3;
+    border-bottom: 2px solid #fdf6e3;
+  }
+  .sticky-resize:hover { opacity: 0.7; }
   .sticky-text {
     background: transparent;
     border: none;
@@ -1460,6 +1480,7 @@ function getDashboardHTML() {
     font-size: 12px;
     font-weight: 500;
     width: 100%;
+    height: calc(100% - 22px);
     resize: none;
     cursor: text;
     outline: none;
@@ -2032,6 +2053,7 @@ if (localStorage.getItem('tt-theme') === 'dark') {
 let stickies = [];
 let dragTarget = null;
 let dragOffset = { x: 0, y: 0 };
+let resizeTarget = null;
 
 function changeStickyColor(id, color) {
   const s = stickies.find(s => s.id === id);
@@ -2045,7 +2067,7 @@ function onBoardClick(e) {
   const x = Math.max(0, Math.min(e.clientX - rect.left - 80, rect.width - 170));
   const y = Math.max(0, Math.min(e.clientY - rect.top - 30, rect.height - 70));
   const id = Date.now().toString();
-  stickies.push({ id, text: '', x, y, color: '#b58900' });
+  stickies.push({ id, text: '', x, y, w: 160, h: 70, color: '#b58900' });
   renderStickies();
   saveStickies();
   // Focus the new sticky
@@ -2058,15 +2080,16 @@ function onBoardClick(e) {
 function renderStickies() {
   const board = document.getElementById('sticky-board');
   board.innerHTML = stickies.map(s =>
-    '<div class="sticky" data-id="' + s.id + '" style="left:' + s.x + 'px;top:' + s.y + 'px;background:' + s.color + '" '
+    '<div class="sticky" data-id="' + s.id + '" style="left:' + s.x + 'px;top:' + s.y + 'px;width:' + (s.w || 160) + 'px;height:' + (s.h || 70) + 'px;background:' + s.color + '" '
     + 'onmousedown="startDrag(event, \\'' + s.id + '\\')">'
     + '<div class="sticky-colors">'
     + '<div class="sticky-color-btn" style="background:#b58900" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#b58900\\')"></div>'
     + '<div class="sticky-color-btn" style="background:#d33682" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#d33682\\')"></div>'
     + '</div>'
     + '<button class="sticky-delete" onclick="confirmDeleteSticky(\\'' + s.id + '\\')" title="Delete">&times;</button>'
-    + '<textarea class="sticky-text" rows="3" onmousedown="event.stopPropagation()" '
+    + '<textarea class="sticky-text" onmousedown="event.stopPropagation()" '
     + 'onblur="updateStickyText(\\'' + s.id + '\\', this.value)">' + escapeHtml(s.text) + '</textarea>'
+    + '<div class="sticky-resize" onmousedown="startResize(event, \\'' + s.id + '\\')"></div>'
     + '</div>'
   ).join('');
 }
@@ -2081,20 +2104,38 @@ function startDrag(e, id) {
   e.preventDefault();
 }
 
+function startResize(e, id) {
+  resizeTarget = id;
+  e.preventDefault();
+  e.stopPropagation();
+}
+
 document.addEventListener('mousemove', function(e) {
+  if (resizeTarget) {
+    const el = document.querySelector('.sticky[data-id="' + resizeTarget + '"]');
+    const s = stickies.find(s => s.id === resizeTarget);
+    if (!el || !s) return;
+    const rect = el.getBoundingClientRect();
+    s.w = Math.max(100, e.clientX - rect.left);
+    s.h = Math.max(50, e.clientY - rect.top);
+    el.style.width = s.w + 'px';
+    el.style.height = s.h + 'px';
+    return;
+  }
   if (!dragTarget) return;
   const board = document.getElementById('sticky-board');
   const rect = board.getBoundingClientRect();
   const s = stickies.find(s => s.id === dragTarget);
   if (!s) return;
-  s.x = Math.max(0, Math.min(e.clientX - rect.left - dragOffset.x, rect.width - 170));
-  s.y = Math.max(0, Math.min(e.clientY - rect.top - dragOffset.y, rect.height - 70));
+  s.x = Math.max(0, Math.min(e.clientX - rect.left - dragOffset.x, rect.width - (s.w || 160)));
+  s.y = Math.max(0, Math.min(e.clientY - rect.top - dragOffset.y, rect.height - (s.h || 70)));
   const el = document.querySelector('.sticky[data-id="' + dragTarget + '"]');
   if (el) { el.style.left = s.x + 'px'; el.style.top = s.y + 'px'; }
 });
 
 document.addEventListener('mouseup', function() {
   if (dragTarget) { saveStickies(); dragTarget = null; }
+  if (resizeTarget) { saveStickies(); resizeTarget = null; }
 });
 
 function updateStickyText(id, text) {
