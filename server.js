@@ -1476,20 +1476,16 @@ function getDashboardHTML() {
     line-height: 1;
   }
   .sticky-delete:hover { opacity: 1; }
-  .sticky-color-picker {
-    display: flex;
-    gap: 4px;
-    margin-bottom: 8px;
-  }
   .sticky-color-btn {
-    width: 22px;
-    height: 22px;
-    border-radius: 3px;
-    border: 2px solid var(--bg-border);
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid rgba(0,0,0,0.2);
     cursor: pointer;
+    position: absolute;
+    top: 5px;
   }
-  .sticky-color-btn.active { border-color: var(--fg); }
-  .sticky-color-btn:hover { border-color: var(--fg-dim); }
+  .sticky-color-btn:hover { border-color: rgba(0,0,0,0.5); }
   .modal-overlay {
     display: none;
     position: fixed;
@@ -1585,10 +1581,6 @@ function getDashboardHTML() {
   <span id="import-status" style="color:#93a1a1;font-size:12px;margin-left:8px"></span>
 </div>
 
-<div class="sticky-color-picker">
-  <div class="sticky-color-btn active" style="background:#FFF740" onclick="setStickyColor('#FFF740', this)" title="Yellow"></div>
-  <div class="sticky-color-btn" style="background:#FF85C2" onclick="setStickyColor('#FF85C2', this)" title="Pink"></div>
-</div>
 <div id="sticky-board" class="sticky-board" onclick="onBoardClick(event)"></div>
 
 <h2>Active Sessions <span class="count" id="active-count"></span></h2>
@@ -2031,15 +2023,13 @@ if (localStorage.getItem('tt-theme') === 'dark') {
 }
 
 // ─── Sticky Notes ────────────────────────────────────────────────
-let currentStickyColor = '#FFF740';
 let stickies = [];
 let dragTarget = null;
 let dragOffset = { x: 0, y: 0 };
 
-function setStickyColor(color, el) {
-  currentStickyColor = color;
-  document.querySelectorAll('.sticky-color-btn').forEach(b => b.classList.remove('active'));
-  el.classList.add('active');
+function changeStickyColor(id, color) {
+  const s = stickies.find(s => s.id === id);
+  if (s) { s.color = color; renderStickies(); saveStickies(); }
 }
 
 function onBoardClick(e) {
@@ -2049,7 +2039,7 @@ function onBoardClick(e) {
   const x = Math.max(0, Math.min(e.clientX - rect.left - 80, rect.width - 170));
   const y = Math.max(0, Math.min(e.clientY - rect.top - 30, rect.height - 70));
   const id = Date.now().toString();
-  stickies.push({ id, text: '', x, y, color: currentStickyColor });
+  stickies.push({ id, text: '', x, y, color: '#FFF740' });
   renderStickies();
   saveStickies();
   // Focus the new sticky
@@ -2064,6 +2054,8 @@ function renderStickies() {
   board.innerHTML = stickies.map(s =>
     '<div class="sticky" data-id="' + s.id + '" style="left:' + s.x + 'px;top:' + s.y + 'px;background:' + s.color + '" '
     + 'onmousedown="startDrag(event, \\'' + s.id + '\\')">'
+    + '<div class="sticky-color-btn" style="left:5px;background:#FFF740" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#FFF740\\')"></div>'
+    + '<div class="sticky-color-btn" style="left:20px;background:#FF85C2" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#FF85C2\\')"></div>'
     + '<button class="sticky-delete" onclick="confirmDeleteSticky(\\'' + s.id + '\\')" title="Delete">&times;</button>'
     + '<textarea class="sticky-text" rows="3" onmousedown="event.stopPropagation()" '
     + 'onblur="updateStickyText(\\'' + s.id + '\\', this.value)">' + escapeHtml(s.text) + '</textarea>'
