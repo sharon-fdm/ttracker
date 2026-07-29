@@ -2070,6 +2070,14 @@ document.addEventListener('keydown', function(e) {
     closeParkModal();
     closeStickyDeleteModal();
   }
+  if (e.key === 'Enter' && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
+    const dm = document.getElementById('delete-modal');
+    if (dm.classList.contains('active')) { document.getElementById('modal-confirm').click(); return; }
+    const pm = document.getElementById('park-modal');
+    if (pm.classList.contains('active')) { document.getElementById('park-modal-confirm').click(); return; }
+    const sm = document.getElementById('sticky-delete-modal');
+    if (sm.classList.contains('active')) { document.getElementById('sticky-delete-confirm').click(); return; }
+  }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (focusedStickyId && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
       confirmDeleteSticky(focusedStickyId);
