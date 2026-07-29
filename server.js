@@ -1471,7 +1471,7 @@ function getDashboardHTML() {
   <thead>
     <tr>
       <th style="width:50px">#</th>
-      <th>Badge</th>
+      <th>Name</th>
       <th>Session Name</th>
       <th>Folder</th>
       <th>Note</th>
@@ -1489,7 +1489,7 @@ function getDashboardHTML() {
   <thead>
     <tr>
       <th style="width:50px">#</th>
-      <th>Badge</th>
+      <th>Name</th>
       <th>Session Name</th>
       <th>Folder</th>
       <th>Note</th>
