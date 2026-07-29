@@ -546,8 +546,8 @@ async function restoreSession(sessionId, fromHistory) {
   if (session.claude_session_id) {
     const nameFlag = session.badge ? ` --name '${session.badge.replace(/'/g, '')}'` : '';
     launchCmd = SAFE_MODE
-      ? `claude --resume ${session.claude_session_id}${nameFlag}`
-      : `claude --dangerously-skip-permissions --resume ${session.claude_session_id}${nameFlag}`;
+      ? `claude${nameFlag} --resume ${session.claude_session_id}`
+      : `claude --dangerously-skip-permissions${nameFlag} --resume ${session.claude_session_id}`;
   } else {
     launchCmd = '';
   }
