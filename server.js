@@ -2060,8 +2060,10 @@ function changeStickyColor(id, color) {
   if (s) { s.color = color; renderStickies(); saveStickies(); }
 }
 
+let justFinishedAction = false;
 function onBoardClick(e) {
   if (e.target.id !== 'sticky-board') return;
+  if (justFinishedAction) { justFinishedAction = false; return; }
   const board = document.getElementById('sticky-board');
   const rect = board.getBoundingClientRect();
   const x = Math.max(0, Math.min(e.clientX - rect.left - 80, rect.width - 170));
@@ -2134,8 +2136,8 @@ document.addEventListener('mousemove', function(e) {
 });
 
 document.addEventListener('mouseup', function() {
-  if (dragTarget) { saveStickies(); dragTarget = null; }
-  if (resizeTarget) { saveStickies(); resizeTarget = null; }
+  if (dragTarget) { saveStickies(); dragTarget = null; justFinishedAction = true; }
+  if (resizeTarget) { saveStickies(); resizeTarget = null; justFinishedAction = true; }
 });
 
 function updateStickyText(id, text) {
