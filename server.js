@@ -1452,6 +1452,7 @@ function getDashboardHTML() {
     color: #fdf6e3;
   }
   .sticky:active { cursor: grabbing; }
+  .sticky.focused { outline: 2px solid var(--blue); }
   .sticky-resize {
     position: absolute;
     bottom: 0;
@@ -2054,6 +2055,29 @@ let stickies = [];
 let dragTarget = null;
 let dragOffset = { x: 0, y: 0 };
 let resizeTarget = null;
+let focusedStickyId = null;
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.sticky')) {
+    focusedStickyId = null;
+    document.querySelectorAll('.sticky.focused').forEach(el => el.classList.remove('focused'));
+  }
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (focusedStickyId && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
+      confirmDeleteSticky(focusedStickyId);
+    }
+  }
+});
+
+function focusSticky(id) {
+  focusedStickyId = id;
+  document.querySelectorAll('.sticky.focused').forEach(el => el.classList.remove('focused'));
+  const el = document.querySelector('.sticky[data-id="' + id + '"]');
+  if (el) el.classList.add('focused');
+}
 
 function changeStickyColor(id, color) {
   const s = stickies.find(s => s.id === id);
@@ -2083,7 +2107,7 @@ function renderStickies() {
   const board = document.getElementById('sticky-board');
   board.innerHTML = stickies.map(s =>
     '<div class="sticky" data-id="' + s.id + '" style="left:' + s.x + 'px;top:' + s.y + 'px;width:' + (s.w || 160) + 'px;height:' + (s.h || 70) + 'px;background:' + s.color + '" '
-    + 'onmousedown="startDrag(event, \\'' + s.id + '\\')">'
+    + 'onmousedown="startDrag(event, \\'' + s.id + '\\')" onclick="focusSticky(\\'' + s.id + '\\')">'
     + '<div class="sticky-colors">'
     + '<div class="sticky-color-btn" style="background:#b58900" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#b58900\\')"></div>'
     + '<div class="sticky-color-btn" style="background:#d33682" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#d33682\\')"></div>'
@@ -2145,12 +2169,21 @@ function updateStickyText(id, text) {
   if (s) { s.text = text; saveStickies(); }
 }
 
+function deleteSticky(id) {
+  stickies = stickies.filter(s => s.id !== id);
+  renderStickies();
+  saveStickies();
+}
+
 function confirmDeleteSticky(id) {
+  const s = stickies.find(s => s.id === id);
+  if (!s || !s.text.trim()) {
+    deleteSticky(id);
+    return;
+  }
   const modal = document.getElementById('sticky-delete-modal');
   document.getElementById('sticky-delete-confirm').onclick = function() {
-    stickies = stickies.filter(s => s.id !== id);
-    renderStickies();
-    saveStickies();
+    deleteSticky(id);
     closeStickyDeleteModal();
   };
   modal.classList.add('active');
