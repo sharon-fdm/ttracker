@@ -2123,7 +2123,7 @@ function onBoardClick(e) {
   const x = Math.max(0, Math.min(e.clientX - rect.left - 80, rect.width - 170));
   const y = Math.max(0, Math.min(e.clientY - rect.top - 30, rect.height - 70));
   const id = Date.now().toString();
-  stickies.push({ id, text: '', x, y, w: 160, h: 70, color: '#b58900' });
+  stickies.push({ id, text: '', x, y, w: 160, h: 70, color: '#859900' });
   renderStickies();
   saveStickies();
   // Focus the new sticky
@@ -2139,8 +2139,8 @@ function renderStickies() {
     '<div class="sticky" data-id="' + s.id + '" style="left:' + s.x + 'px;top:' + s.y + 'px;width:' + (s.w || 160) + 'px;height:' + (s.h || 70) + 'px;background:' + s.color + '" '
     + 'onmousedown="startDrag(event, \\'' + s.id + '\\')" onclick="focusSticky(\\'' + s.id + '\\')">'
     + '<div class="sticky-colors">'
-    + '<div class="sticky-color-btn" style="background:#b58900" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#b58900\\')"></div>'
-    + '<div class="sticky-color-btn" style="background:#d33682" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#d33682\\')"></div>'
+    + '<div class="sticky-color-btn" style="background:#859900" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#859900\\')"></div>'
+    + '<div class="sticky-color-btn" style="background:#6c71c4" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#6c71c4\\')"></div>'
     + '</div>'
     + '<button class="sticky-delete" onclick="confirmDeleteSticky(\\'' + s.id + '\\')" title="Delete">&times;</button>'
     + '<textarea class="sticky-text" onmousedown="event.stopPropagation()" '
