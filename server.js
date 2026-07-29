@@ -544,10 +544,9 @@ async function restoreSession(sessionId, fromHistory) {
   // Build the command to run after cd + badge
   let launchCmd;
   if (session.claude_session_id) {
-    const nameFlag = session.badge ? ` --name '${session.badge.replace(/'/g, '')}'` : '';
     launchCmd = SAFE_MODE
-      ? `claude${nameFlag} --resume ${session.claude_session_id}`
-      : `claude --dangerously-skip-permissions${nameFlag} --resume ${session.claude_session_id}`;
+      ? `claude --resume ${session.claude_session_id}`
+      : `claude --dangerously-skip-permissions --resume ${session.claude_session_id}`;
   } else {
     launchCmd = '';
   }
@@ -592,6 +591,32 @@ end tell`);
   if (badgeB64 && newTty) {
     await new Promise(r => setTimeout(r, 1000));
     try { fs.writeFileSync(newTty, `\x1b]1337;SetBadgeFormat=${badgeB64}\x07`); } catch {}
+  }
+
+  // Rename the Claude session after it starts
+  if (session.badge && session.claude_session_id && newTty) {
+    // Wait for Claude to fully initialize, then send /rename
+    setTimeout(async () => {
+      try {
+        // Find the new window by TTY
+        await runOsascript(`
+tell application "iTerm2"
+    repeat with w from 1 to (count of windows)
+        repeat with t from 1 to (count of tabs of (window w))
+            repeat with s from 1 to (count of sessions of tab t of (window w))
+                set sess to session s of tab t of (window w)
+                if (tty of sess) is "${newTty}" then
+                    tell sess
+                        write text "/rename ${session.badge.replace(/"/g, '')}"
+                    end tell
+                    return "done"
+                end if
+            end repeat
+        end repeat
+    end repeat
+end tell`);
+      } catch {}
+    }, 8000);
   }
 
   // Remove from history only after successful restore
