@@ -1419,13 +1419,21 @@ function getDashboardHTML() {
     line-height: 1;
   }
   .theme-toggle:hover { border-color: var(--blue); }
+  .top-panel {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .top-controls {
+    flex: 0 0 auto;
+  }
   .sticky-board {
     position: relative;
+    flex: 1;
     min-height: 150px;
     background: var(--bg-alt);
     border: 2px dashed var(--bg-border);
     border-radius: 8px;
-    margin-bottom: 24px;
     cursor: crosshair;
   }
   .sticky-board:empty::after {
@@ -1573,6 +1581,9 @@ function getDashboardHTML() {
   </div>
 </div>
 
+<div class="top-panel">
+<div class="top-controls">
+
 <div class="new-session">
   <input id="new-badge" type="text" placeholder="session name (optional)" onkeydown="if(event.key==='Enter')document.getElementById('new-btn').click()" />
   <button id="new-btn" class="btn-new" onclick="newSession()">+ New Claude Session</button>
@@ -1609,7 +1620,9 @@ function getDashboardHTML() {
   <span id="import-status" style="color:#93a1a1;font-size:12px;margin-left:8px"></span>
 </div>
 
+</div>
 <div id="sticky-board" class="sticky-board" onclick="onBoardClick(event)"></div>
+</div>
 
 <h2>Active Sessions <span class="count" id="active-count"></span></h2>
 <table>
