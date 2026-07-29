@@ -1449,13 +1449,13 @@ function getDashboardHTML() {
     cursor: grab;
     box-shadow: 2px 3px 8px rgba(0,0,0,0.2);
     user-select: none;
-    color: #333;
+    color: var(--bg);
   }
   .sticky:active { cursor: grabbing; }
   .sticky-text {
     background: transparent;
     border: none;
-    color: #333;
+    color: var(--bg);
     font-family: inherit;
     font-size: 12px;
     width: 100%;
@@ -1471,8 +1471,8 @@ function getDashboardHTML() {
     border: none;
     font-size: 14px;
     cursor: pointer;
-    color: #333;
-    opacity: 0.4;
+    color: var(--bg);
+    opacity: 0.5;
     line-height: 1;
   }
   .sticky-delete:hover { opacity: 1; }
@@ -1480,12 +1480,12 @@ function getDashboardHTML() {
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    border: 1px solid rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.3);
     cursor: pointer;
     position: absolute;
     top: 5px;
   }
-  .sticky-color-btn:hover { border-color: rgba(0,0,0,0.5); }
+  .sticky-color-btn:hover { border-color: rgba(255,255,255,0.7); }
   .modal-overlay {
     display: none;
     position: fixed;
@@ -2039,7 +2039,7 @@ function onBoardClick(e) {
   const x = Math.max(0, Math.min(e.clientX - rect.left - 80, rect.width - 170));
   const y = Math.max(0, Math.min(e.clientY - rect.top - 30, rect.height - 70));
   const id = Date.now().toString();
-  stickies.push({ id, text: '', x, y, color: '#FFF740' });
+  stickies.push({ id, text: '', x, y, color: '#b58900' });
   renderStickies();
   saveStickies();
   // Focus the new sticky
@@ -2054,8 +2054,8 @@ function renderStickies() {
   board.innerHTML = stickies.map(s =>
     '<div class="sticky" data-id="' + s.id + '" style="left:' + s.x + 'px;top:' + s.y + 'px;background:' + s.color + '" '
     + 'onmousedown="startDrag(event, \\'' + s.id + '\\')">'
-    + '<div class="sticky-color-btn" style="left:5px;background:#FFF740" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#FFF740\\')"></div>'
-    + '<div class="sticky-color-btn" style="left:20px;background:#FF85C2" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#FF85C2\\')"></div>'
+    + '<div class="sticky-color-btn" style="left:5px;background:#b58900" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#b58900\\')"></div>'
+    + '<div class="sticky-color-btn" style="left:20px;background:#d33682" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#d33682\\')"></div>'
     + '<button class="sticky-delete" onclick="confirmDeleteSticky(\\'' + s.id + '\\')" title="Delete">&times;</button>'
     + '<textarea class="sticky-text" rows="3" onmousedown="event.stopPropagation()" '
     + 'onblur="updateStickyText(\\'' + s.id + '\\', this.value)">' + escapeHtml(s.text) + '</textarea>'
