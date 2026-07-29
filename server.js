@@ -1119,6 +1119,29 @@ end tell`);
     return;
   }
 
+  // GET /api/stickies
+  if (req.method === 'GET' && url.pathname === '/api/stickies') {
+    const state = loadState();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(state.stickies || []));
+    return;
+  }
+
+  // PUT /api/stickies
+  if (req.method === 'PUT' && url.pathname === '/api/stickies') {
+    const body = await new Promise((resolve) => {
+      let data = '';
+      req.on('data', c => data += c);
+      req.on('end', () => resolve(data));
+    });
+    const state = loadState();
+    state.stickies = JSON.parse(body);
+    saveState(state);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
   // PUT /api/note/:session_id
   if (req.method === 'PUT' && pathParts[0] === 'api' && pathParts[1] === 'note' && pathParts[2]) {
     const body = await new Promise((resolve) => {
@@ -1396,6 +1419,62 @@ function getDashboardHTML() {
     line-height: 1;
   }
   .theme-toggle:hover { border-color: var(--blue); }
+  .sticky-board {
+    position: relative;
+    min-height: 150px;
+    background: var(--bg-alt);
+    border: 2px dashed var(--bg-border);
+    border-radius: 8px;
+    margin-bottom: 24px;
+    cursor: crosshair;
+  }
+  .sticky-board:empty::after {
+    content: 'Click anywhere to add a sticky note';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--fg-muted);
+    font-size: 12px;
+    font-style: italic;
+    pointer-events: none;
+  }
+  .sticky {
+    position: absolute;
+    width: 160px;
+    min-height: 60px;
+    padding: 20px 10px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: grab;
+    box-shadow: 2px 2px 6px rgba(0,0,0,0.15);
+    user-select: none;
+  }
+  .sticky:active { cursor: grabbing; }
+  .sticky-text {
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-family: inherit;
+    font-size: 12px;
+    width: 100%;
+    resize: none;
+    cursor: text;
+    outline: none;
+  }
+  .sticky-delete {
+    position: absolute;
+    top: 3px;
+    right: 5px;
+    background: none;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    color: inherit;
+    opacity: 0.4;
+    line-height: 1;
+  }
+  .sticky-delete:hover { opacity: 1; }
   .modal-overlay {
     display: none;
     position: fixed;
@@ -1491,6 +1570,8 @@ function getDashboardHTML() {
   <span id="import-status" style="color:#93a1a1;font-size:12px;margin-left:8px"></span>
 </div>
 
+<div id="sticky-board" class="sticky-board" onclick="onBoardClick(event)"></div>
+
 <h2>Active Sessions <span class="count" id="active-count"></span></h2>
 <table>
   <thead>
@@ -1547,6 +1628,17 @@ function getDashboardHTML() {
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeParkModal()">Cancel</button>
       <button class="btn btn-park" id="park-modal-confirm">Park</button>
+    </div>
+  </div>
+</div>
+
+<div id="sticky-delete-modal" class="modal-overlay">
+  <div class="modal" style="border-color: var(--red)">
+    <h3 style="color: var(--red)">Delete Sticky Note</h3>
+    <p>Are you sure?</p>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeStickyDeleteModal()">Cancel</button>
+      <button class="btn btn-confirm-delete" id="sticky-delete-confirm">Delete</button>
     </div>
   </div>
 </div>
@@ -1919,9 +2011,108 @@ if (localStorage.getItem('tt-theme') === 'dark') {
   document.getElementById('theme-btn').innerHTML = '&#9788; Light';
 }
 
+// ─── Sticky Notes ────────────────────────────────────────────────
+const stickyColors = ['#b58900', '#cb4b16', '#268bd2', '#d33682', '#6c71c4', '#2aa198', '#859900'];
+let stickies = [];
+let dragTarget = null;
+let dragOffset = { x: 0, y: 0 };
+
+function onBoardClick(e) {
+  if (e.target.id !== 'sticky-board') return;
+  const board = document.getElementById('sticky-board');
+  const rect = board.getBoundingClientRect();
+  const x = Math.max(0, Math.min(e.clientX - rect.left - 80, rect.width - 170));
+  const y = Math.max(0, Math.min(e.clientY - rect.top - 30, rect.height - 70));
+  const id = Date.now().toString();
+  const color = stickyColors[stickies.length % stickyColors.length];
+  stickies.push({ id, text: '', x, y, color });
+  renderStickies();
+  saveStickies();
+  // Focus the new sticky
+  setTimeout(() => {
+    const ta = document.querySelector('.sticky[data-id="' + id + '"] textarea');
+    if (ta) ta.focus();
+  }, 50);
+}
+
+function renderStickies() {
+  const board = document.getElementById('sticky-board');
+  board.innerHTML = stickies.map(s =>
+    '<div class="sticky" data-id="' + s.id + '" style="left:' + s.x + 'px;top:' + s.y + 'px;background:' + s.color + ';color:#fdf6e3" '
+    + 'onmousedown="startDrag(event, \\'' + s.id + '\\')">'
+    + '<button class="sticky-delete" onclick="confirmDeleteSticky(\\'' + s.id + '\\')" title="Delete">&times;</button>'
+    + '<textarea class="sticky-text" rows="3" onmousedown="event.stopPropagation()" '
+    + 'onblur="updateStickyText(\\'' + s.id + '\\', this.value)">' + escapeHtml(s.text) + '</textarea>'
+    + '</div>'
+  ).join('');
+}
+
+function startDrag(e, id) {
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON') return;
+  dragTarget = id;
+  const el = document.querySelector('.sticky[data-id="' + id + '"]');
+  const rect = el.getBoundingClientRect();
+  dragOffset.x = e.clientX - rect.left;
+  dragOffset.y = e.clientY - rect.top;
+  e.preventDefault();
+}
+
+document.addEventListener('mousemove', function(e) {
+  if (!dragTarget) return;
+  const board = document.getElementById('sticky-board');
+  const rect = board.getBoundingClientRect();
+  const s = stickies.find(s => s.id === dragTarget);
+  if (!s) return;
+  s.x = Math.max(0, Math.min(e.clientX - rect.left - dragOffset.x, rect.width - 170));
+  s.y = Math.max(0, Math.min(e.clientY - rect.top - dragOffset.y, rect.height - 70));
+  const el = document.querySelector('.sticky[data-id="' + dragTarget + '"]');
+  if (el) { el.style.left = s.x + 'px'; el.style.top = s.y + 'px'; }
+});
+
+document.addEventListener('mouseup', function() {
+  if (dragTarget) { saveStickies(); dragTarget = null; }
+});
+
+function updateStickyText(id, text) {
+  const s = stickies.find(s => s.id === id);
+  if (s) { s.text = text; saveStickies(); }
+}
+
+function confirmDeleteSticky(id) {
+  const modal = document.getElementById('sticky-delete-modal');
+  document.getElementById('sticky-delete-confirm').onclick = function() {
+    stickies = stickies.filter(s => s.id !== id);
+    renderStickies();
+    saveStickies();
+    closeStickyDeleteModal();
+  };
+  modal.classList.add('active');
+}
+
+function closeStickyDeleteModal() {
+  document.getElementById('sticky-delete-modal').classList.remove('active');
+}
+
+async function saveStickies() {
+  await fetch(API + '/api/stickies', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(stickies)
+  });
+}
+
+async function loadStickies() {
+  try {
+    const res = await fetch(API + '/api/stickies');
+    stickies = await res.json();
+    renderStickies();
+  } catch {}
+}
+
 // Initial load + auto-refresh
 refresh();
 loadProjects();
+loadStickies();
 refreshTimer = setInterval(refresh, 5000);
 </script>
 
