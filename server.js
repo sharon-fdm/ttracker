@@ -487,7 +487,8 @@ end tell`);
 async function createNewSession(badge) {
   const cwd = path.join(os.homedir(), 'repos', 'fleet');
   const badgeB64 = badge ? Buffer.from(badge).toString('base64') : '';
-  const claudeCmd = 'claude --dangerously-skip-permissions';
+  const nameFlag = badge ? ` --name '${badge.replace(/'/g, '')}'` : '';
+  const claudeCmd = `claude --dangerously-skip-permissions${nameFlag}`;
 
   const tmpFile = path.join(os.tmpdir(), `tt-new-${Date.now()}.applescript`);
   const badgeLine = badgeB64
@@ -543,9 +544,10 @@ async function restoreSession(sessionId, fromHistory) {
   // Build the command to run after cd + badge
   let launchCmd;
   if (session.claude_session_id) {
+    const nameFlag = session.badge ? ` --name '${session.badge.replace(/'/g, '')}'` : '';
     launchCmd = SAFE_MODE
-      ? `claude --resume ${session.claude_session_id}`
-      : `claude --dangerously-skip-permissions --resume ${session.claude_session_id}`;
+      ? `claude --resume ${session.claude_session_id}${nameFlag}`
+      : `claude --dangerously-skip-permissions --resume ${session.claude_session_id}${nameFlag}`;
   } else {
     launchCmd = '';
   }
@@ -1056,13 +1058,34 @@ end tell`);
     saveState(state);
 
     // Update iTerm2 badge by writing escape sequence directly to the TTY device
-    // This works even when a process (claude, node, etc.) is running in the terminal
     const ttySession = state.snapshot.sessions.find(s =>
       s.claude_session_id === sid || s.iterm_uuid === sid);
     if (ttySession && ttySession.tty) {
       const badgeB64 = Buffer.from(badge).toString('base64');
       try {
         fs.writeFileSync(ttySession.tty, `\x1b]1337;SetBadgeFormat=${badgeB64}\x07`);
+      } catch {}
+    }
+
+    // Rename the Claude session via /rename (only for running Claude sessions)
+    if (badge && ttySession && ttySession.claude_session_id && ttySession.iterm_uuid) {
+      try {
+        await runOsascript(`
+tell application "iTerm2"
+    repeat with w from 1 to (count of windows)
+        repeat with t from 1 to (count of tabs of (window w))
+            repeat with s from 1 to (count of sessions of tab t of (window w))
+                set sess to session s of tab t of (window w)
+                if (unique ID of sess) is "${ttySession.iterm_uuid}" then
+                    tell sess
+                        write text "/rename ${badge.replace(/"/g, '')}"
+                    end tell
+                    return "done"
+                end if
+            end repeat
+        end repeat
+    end repeat
+end tell`);
       } catch {}
     }
 
@@ -1408,7 +1431,7 @@ function getDashboardHTML() {
 </div>
 
 <div class="new-session">
-  <input id="new-badge" type="text" placeholder="badge (optional)" onkeydown="if(event.key==='Enter')document.getElementById('new-btn').click()" />
+  <input id="new-badge" type="text" placeholder="session name (optional)" onkeydown="if(event.key==='Enter')document.getElementById('new-btn').click()" />
   <button id="new-btn" class="btn-new" onclick="newSession()">+ New Claude Session</button>
 </div>
 
@@ -1425,7 +1448,7 @@ function getDashboardHTML() {
     <thead>
       <tr>
         <th>Location</th>
-        <th>Badge</th>
+        <th>Name</th>
         <th>Session Name</th>
         <th>Match</th>
         <th>Action</th>
@@ -1567,7 +1590,7 @@ function renderActive(data) {
     const folder = s.cwd ? s.cwd.replace(/^\\/Users\\/[^\\/]+\\//, '~/') : '';
     return '<tr>'
       + '<td>' + (i + 1) + '</td>'
-      + '<td><input class="badge-input" value="' + escapeHtml(s.badge) + '" placeholder="badge" '
+      + '<td><input class="badge-input" value="' + escapeHtml(s.badge) + '" placeholder="name" '
       + 'onblur="saveBadge(\\'' + (s.claude_session_id || s.iterm_uuid) + '\\', this.value, \\'' + s.iterm_uuid + '\\')" '
       + 'onkeydown="if(event.key===\\'Enter\\')this.blur()" /></td>'
       + '<td>' + escapeHtml(s.session_name) + '</td>'
@@ -1605,7 +1628,7 @@ function renderHistory(entries) {
     const folder = h.cwd ? h.cwd.replace(/^\\/Users\\/[^\\/]+\\//, '~/') : '';
     return '<tr>'
       + '<td>' + (i + 1) + '</td>'
-      + '<td><input class="badge-input" value="' + escapeHtml(h.badge) + '" placeholder="badge" '
+      + '<td><input class="badge-input" value="' + escapeHtml(h.badge) + '" placeholder="name" '
       + 'onblur="saveBadge(\\'' + hKey + '\\', this.value, \\'\\')" '
       + 'onkeydown="if(event.key===\\'Enter\\')this.blur()" /></td>'
       + '<td>' + escapeHtml(h.session_name) + '</td>'
