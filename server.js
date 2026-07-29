@@ -2070,6 +2070,10 @@ document.addEventListener('keydown', function(e) {
     closeParkModal();
     closeStickyDeleteModal();
   }
+  if (e.key === 'z' && (e.metaKey || e.ctrlKey) && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
+    undoDeleteSticky();
+    e.preventDefault();
+  }
   if (e.key === 'Enter' && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
     const dm = document.getElementById('delete-modal');
     if (dm.classList.contains('active')) { document.getElementById('modal-confirm').click(); return; }
@@ -2127,7 +2131,8 @@ function renderStickies() {
     + '</div>'
     + '<button class="sticky-delete" onclick="confirmDeleteSticky(\\'' + s.id + '\\')" title="Delete">&times;</button>'
     + '<textarea class="sticky-text" onmousedown="event.stopPropagation()" '
-    + 'onblur="updateStickyText(\\'' + s.id + '\\', this.value)">' + escapeHtml(s.text) + '</textarea>'
+    + 'onblur="updateStickyText(\\'' + s.id + '\\', this.value)" '
+    + 'onkeydown="if(event.key===\\'Escape\\'){this.blur();event.stopPropagation()}">' + escapeHtml(s.text) + '</textarea>'
     + '<div class="sticky-resize" onmousedown="startResize(event, \\'' + s.id + '\\')"></div>'
     + '</div>'
   ).join('');
@@ -2135,6 +2140,8 @@ function renderStickies() {
 
 function startDrag(e, id) {
   if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON') return;
+  // Blur any active textarea to stop editing
+  if (document.activeElement.tagName === 'TEXTAREA') document.activeElement.blur();
   dragTarget = id;
   const el = document.querySelector('.sticky[data-id="' + id + '"]');
   const rect = el.getBoundingClientRect();
@@ -2182,10 +2189,27 @@ function updateStickyText(id, text) {
   if (s) { s.text = text; saveStickies(); }
 }
 
+const stickyUndoStack = [];
+
 function deleteSticky(id) {
+  const deleted = stickies.find(s => s.id === id);
+  if (deleted) {
+    stickyUndoStack.push({ ...deleted });
+    if (stickyUndoStack.length > 10) stickyUndoStack.shift();
+  }
   stickies = stickies.filter(s => s.id !== id);
+  if (focusedStickyId === id) focusedStickyId = null;
   renderStickies();
   saveStickies();
+}
+
+function undoDeleteSticky() {
+  if (!stickyUndoStack.length) return;
+  const restored = stickyUndoStack.pop();
+  stickies.push(restored);
+  renderStickies();
+  saveStickies();
+  focusSticky(restored.id);
 }
 
 function confirmDeleteSticky(id) {
