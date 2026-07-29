@@ -2065,6 +2065,11 @@ document.addEventListener('click', function(e) {
 });
 
 document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    closeModal();
+    closeParkModal();
+    closeStickyDeleteModal();
+  }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (focusedStickyId && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
       confirmDeleteSticky(focusedStickyId);
