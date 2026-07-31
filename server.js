@@ -1656,10 +1656,10 @@ function getDashboardHTML() {
   <span id="import-status" style="color:#93a1a1;font-size:12px;margin-left:8px"></span>
 </div>
 
-<button class="btn-new" style="background:var(--green);padding:4px 10px;font-size:11px" id="sticky-toggle" onclick="toggleStickies()">Sticky Notes</button>
+<button class="btn-new" style="background:var(--green);padding:4px 10px;font-size:11px" id="sticky-toggle" onclick="toggleStickies()">Show Notes</button>
 
 </div>
-<div id="sticky-board" class="sticky-board" onclick="onBoardClick(event)"></div>
+<div id="sticky-board" class="sticky-board" style="display:none" onclick="onBoardClick(event)"></div>
 </div>
 
 <h2>Active Sessions <span class="count" id="active-count"></span></h2>
@@ -2145,10 +2145,10 @@ function toggleStickies() {
   localStorage.setItem('tt-stickies-visible', visible ? '0' : '1');
 }
 
-// Restore sticky visibility (hidden by default)
-if (localStorage.getItem('tt-stickies-visible') !== '1') {
-  document.getElementById('sticky-board').style.display = 'none';
-  document.getElementById('sticky-toggle').textContent = 'Show Notes';
+// Restore sticky visibility (hidden by default in HTML)
+if (localStorage.getItem('tt-stickies-visible') === '1') {
+  document.getElementById('sticky-board').style.display = '';
+  document.getElementById('sticky-toggle').textContent = 'Hide Notes';
 }
 
 // ─── Sticky Notes ────────────────────────────────────────────────
