@@ -1620,6 +1620,8 @@ function getDashboardHTML() {
   <span id="import-status" style="color:#93a1a1;font-size:12px;margin-left:8px"></span>
 </div>
 
+<button class="btn-new" style="background:var(--green);padding:4px 10px;font-size:11px" id="sticky-toggle" onclick="toggleStickies()">Sticky Notes</button>
+
 </div>
 <div id="sticky-board" class="sticky-board" onclick="onBoardClick(event)"></div>
 </div>
@@ -2061,6 +2063,21 @@ function toggleTheme() {
 if (localStorage.getItem('tt-theme') === 'dark') {
   document.body.classList.add('dark');
   document.getElementById('theme-btn').innerHTML = '&#9788; Light';
+}
+
+function toggleStickies() {
+  const board = document.getElementById('sticky-board');
+  const btn = document.getElementById('sticky-toggle');
+  const visible = board.style.display !== 'none';
+  board.style.display = visible ? 'none' : '';
+  btn.textContent = visible ? 'Show Notes' : 'Hide Notes';
+  localStorage.setItem('tt-stickies-visible', visible ? '0' : '1');
+}
+
+// Restore sticky visibility
+if (localStorage.getItem('tt-stickies-visible') === '0') {
+  document.getElementById('sticky-board').style.display = 'none';
+  document.getElementById('sticky-toggle').textContent = 'Show Notes';
 }
 
 // ─── Sticky Notes ────────────────────────────────────────────────
