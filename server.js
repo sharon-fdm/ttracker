@@ -2074,8 +2074,8 @@ function toggleStickies() {
   localStorage.setItem('tt-stickies-visible', visible ? '0' : '1');
 }
 
-// Restore sticky visibility
-if (localStorage.getItem('tt-stickies-visible') === '0') {
+// Restore sticky visibility (hidden by default)
+if (localStorage.getItem('tt-stickies-visible') !== '1') {
   document.getElementById('sticky-board').style.display = 'none';
   document.getElementById('sticky-toggle').textContent = 'Show Notes';
 }
