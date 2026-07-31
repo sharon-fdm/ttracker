@@ -22,7 +22,7 @@ const PORT = parseInt(process.env.TT_PORT || '3847');
 const INTERVAL_MIN = parseInt(process.env.TT_INTERVAL || '10');
 const SAFE_MODE = process.env.TT_SAFE_MODE === '1';
 const SCRIPT_DIR = __dirname;
-const SNAPSHOT_DIR = path.join(SCRIPT_DIR, 'snapshots');
+const SNAPSHOT_DIR = process.env.TT_DATA_DIR || path.join(SCRIPT_DIR, 'snapshots');
 const STATE_FILE = path.join(SNAPSHOT_DIR, 'state.json');
 const PID_FILE = path.join(SNAPSHOT_DIR, 'daemon.pid');
 const CLAUDE_SESSIONS_DIR = path.join(os.homedir(), '.claude', 'sessions');
