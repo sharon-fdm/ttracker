@@ -211,6 +211,40 @@ Timestamped snapshot backups are kept in `snapshots/` (last 50).
 - [Node.js](https://nodejs.org/) (v18+)
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
 
+## Releasing a New Version
+
+When you're ready to publish a new version:
+
+**1.** Tag and release on the main repo:
+```bash
+cd ~/repos/ttracker
+git tag v0.2.0
+git push origin v0.2.0
+gh release create v0.2.0 --title "v0.2.0" --notes "Release notes here."
+```
+
+**2.** Get the new checksum:
+```bash
+curl -sL -o /tmp/ttracker.tar.gz https://github.com/sharon-fdm/ttracker/archive/refs/tags/v0.2.0.tar.gz
+shasum -a 256 /tmp/ttracker.tar.gz
+```
+
+**3.** Update the Homebrew formula:
+```bash
+cd ~/repos/homebrew-ttracker
+```
+Edit `Formula/ttracker.rb`:
+- Update the `url` to point to the new tag
+- Update the `sha256` with the new checksum
+
+```bash
+git add Formula/ttracker.rb
+git commit -m "Update ttracker to v0.2.0"
+git push
+```
+
+Users will get the new version on their next `brew upgrade ttracker`.
+
 ## License
 
 MIT
