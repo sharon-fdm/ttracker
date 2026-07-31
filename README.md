@@ -44,7 +44,16 @@ You have 10 Claude Code sessions open across iTerm2 windows. Your Mac restarts. 
 
 ## Quick Start
 
-**1.** Clone and start:
+### Option A: Homebrew
+
+```bash
+brew tap sharon-fdm/ttracker
+brew install ttracker
+ttracker
+```
+
+### Option B: Clone
+
 ```bash
 git clone https://github.com/sharon-fdm/ttracker.git
 cd ttracker
