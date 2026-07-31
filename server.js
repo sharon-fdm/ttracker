@@ -156,7 +156,6 @@ function generateBadge(topic) {
 }
 
 function findProjectDir(claudeSessionId) {
-  // Find which project dir contains a given session's JSONL
   try {
     for (const d of fs.readdirSync(CLAUDE_PROJECTS_DIR)) {
       const jsonl = path.join(CLAUDE_PROJECTS_DIR, d, `${claudeSessionId}.jsonl`);
@@ -164,6 +163,31 @@ function findProjectDir(claudeSessionId) {
     }
   } catch {}
   return null;
+}
+
+function getSessionFileSize(claudeSessionId) {
+  if (!claudeSessionId) return 0;
+  const projDir = findProjectDir(claudeSessionId);
+  if (!projDir) return 0;
+  try {
+    return fs.statSync(path.join(CLAUDE_PROJECTS_DIR, projDir, `${claudeSessionId}.jsonl`)).size;
+  } catch { return 0; }
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function deleteSessionFile(claudeSessionId) {
+  if (!claudeSessionId) return false;
+  const projDir = findProjectDir(claudeSessionId);
+  if (!projDir) return false;
+  try {
+    fs.unlinkSync(path.join(CLAUDE_PROJECTS_DIR, projDir, `${claudeSessionId}.jsonl`));
+    return true;
+  } catch { return false; }
 }
 
 // ─── State Management ────────────────────────────────────────────────────────
@@ -652,6 +676,7 @@ async function handleAPI(req, res) {
       .map(s => ({
         ...s,
         note: state.notes[s.claude_session_id] || state.notes[s.iterm_uuid] || '',
+        file_size: getSessionFileSize(s.claude_session_id),
         status: s.process === 'killed' ? 'killed'
           : !s.claude_session_id ? 'no-claude'
           : running.has(s.claude_session_id) ? 'running'
@@ -674,6 +699,7 @@ async function handleAPI(req, res) {
     const entries = state.history.map(h => ({
       ...h,
       note: (h.claude_session_id && state.notes[h.claude_session_id]) || '',
+      file_size: getSessionFileSize(h.claude_session_id),
       status: running.has(h.claude_session_id) ? 'running' : 'parked'
     }));
 
@@ -1044,6 +1070,16 @@ end tell`);
       res.end(JSON.stringify({ ok: false, error: 'Not found' }));
       return;
     }
+    const entry = state.history[idx];
+    const deleteFile = url.searchParams.get('deleteFile') === '1';
+
+    // If requested, delete the Claude JSONL file for this specific session
+    let fileDeleted = false;
+    if (deleteFile && entry.claude_session_id) {
+      fileDeleted = deleteSessionFile(entry.claude_session_id);
+      console.log(`[delete] Claude file for ${entry.claude_session_id}: ${fileDeleted ? 'deleted' : 'not found'}`);
+    }
+
     state.history.splice(idx, 1);
     // Also remove from snapshot if it was a carried-over missing session
     state.snapshot.sessions = state.snapshot.sessions.filter(s =>
@@ -1053,7 +1089,7 @@ end tell`);
     delete state.notes[sid];
     saveState(state);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true }));
+    res.end(JSON.stringify({ ok: true, fileDeleted }));
     return;
   }
 
@@ -1665,11 +1701,12 @@ function getDashboardHTML() {
 <div id="delete-modal" class="modal-overlay">
   <div class="modal">
     <h3>Delete Session Forever</h3>
-    <p>This will permanently remove <span class="badge-name" id="modal-badge"></span> from the parked list.</p>
-    <p>The Claude conversation history will remain in <code>~/.claude/</code> but ttracker will no longer track it.</p>
+    <p>Remove <span class="badge-name" id="modal-badge"></span> from ttracker.</p>
+    <p>Session data: <span id="modal-size" style="font-weight:600"></span></p>
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-confirm-delete" id="modal-confirm">Delete Forever</button>
+      <button class="btn btn-confirm-delete" id="modal-confirm">Remove from ttracker</button>
+      <button class="btn btn-confirm-delete" id="modal-confirm-all" style="background:var(--red)">Delete with Claude data</button>
     </div>
   </div>
 </div>
@@ -1678,6 +1715,7 @@ function getDashboardHTML() {
   <div class="modal" style="border-color: var(--orange)">
     <h3 style="color: var(--orange)">Park Session</h3>
     <p>This will close the terminal for <span class="badge-name" id="park-modal-badge"></span> and save it to the parked list.</p>
+    <p>Session data: <span id="park-modal-size" style="font-weight:600"></span></p>
     <p>You can restore it anytime from the Parked Sessions table.</p>
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeParkModal()">Cancel</button>
@@ -1747,7 +1785,7 @@ function renderActive(data) {
     if (s.status === 'running' || s.status === 'no-claude') {
       action = '<button class="btn btn-focus" onclick="focusSession(\\'' + s.iterm_uuid + '\\')">Focus</button>';
       if (!isTtracker) {
-        action += ' <button class="btn btn-park" onclick="parkSession(\\'' + s.iterm_uuid + '\\', \\'' + escapeHtml(s.badge) + '\\')">Park</button>';
+        action += ' <button class="btn btn-park" onclick="parkSession(\\'' + s.iterm_uuid + '\\', \\'' + escapeHtml(s.badge) + '\\', ' + (s.file_size || 0) + ')">Park</button>';
       }
     } else if (s.status === 'missing') {
       action = '<button class="btn btn-restore" onclick="restoreSession(\\'' + s.claude_session_id + '\\')">Restore</button>'
@@ -1793,7 +1831,7 @@ function renderHistory(entries) {
       action = '<span style="color:#859900;font-size:12px">open</span>';
     } else {
       action = '<button class="btn btn-restore" onclick="restoreFromHistory(\\'' + hKey + '\\')">Restore</button>'
-        + ' <button class="btn btn-delete" onclick="confirmDelete(\\'' + hKey + '\\', \\'' + escapeHtml(h.badge) + '\\')">Delete</button>';
+        + ' <button class="btn btn-delete" onclick="confirmDelete(\\'' + hKey + '\\', \\'' + escapeHtml(h.badge) + '\\', ' + (h.file_size || 0) + ')">Delete</button>';
     }
     const noteVal = escapeHtml(h.note);
     const folder = h.cwd ? h.cwd.replace(/^\\/Users\\/[^\\/]+\\//, '~/') : '';
@@ -1823,19 +1861,51 @@ async function refresh() {
   renderHistory(history);
 }
 
-function confirmDelete(sessionId, badge) {
+function confirmDelete(sessionId, badge, fileSize) {
   const modal = document.getElementById('delete-modal');
   document.getElementById('modal-badge').textContent = badge || sessionId.slice(0, 12) + '...';
+  document.getElementById('modal-size').textContent = fileSize ? formatFileSize(fileSize) : 'none';
+  const btnAll = document.getElementById('modal-confirm-all');
+  btnAll.style.display = fileSize ? '' : 'none';
   document.getElementById('modal-confirm').onclick = async function() {
     await fetch(API + '/api/delete-history/' + encodeURIComponent(sessionId), { method: 'DELETE' });
+    closeModal();
+    await refresh();
+  };
+  btnAll.onclick = function() {
+    closeModal();
+    confirmDeleteWithData(sessionId, badge, fileSize);
+  };
+  modal.classList.add('active');
+}
+
+function confirmDeleteWithData(sessionId, badge, fileSize) {
+  const modal = document.getElementById('delete-modal');
+  document.getElementById('modal-badge').textContent = badge || sessionId.slice(0, 12) + '...';
+  document.getElementById('modal-size').innerHTML = '<span style="color:var(--red)">' + formatFileSize(fileSize) + ' will be permanently deleted from ~/.claude/</span>';
+  document.getElementById('modal-confirm').style.display = 'none';
+  document.getElementById('modal-confirm-all').style.display = '';
+  document.getElementById('modal-confirm-all').textContent = 'Yes, Delete Everything';
+  document.getElementById('modal-confirm-all').onclick = async function() {
+    await fetch(API + '/api/delete-history/' + encodeURIComponent(sessionId) + '?deleteFile=1', { method: 'DELETE' });
     closeModal();
     await refresh();
   };
   modal.classList.add('active');
 }
 
+function formatFileSize(bytes) {
+  if (!bytes) return '0 B';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
 function closeModal() {
   document.getElementById('delete-modal').classList.remove('active');
+  document.getElementById('modal-confirm').style.display = '';
+  document.getElementById('modal-confirm').textContent = 'Remove from ttracker';
+  document.getElementById('modal-confirm-all').textContent = 'Delete with Claude data';
 }
 
 let searchAbort = null;
@@ -1972,9 +2042,10 @@ async function focusSession(itermUuid) {
   await fetch(API + '/api/focus/' + encodeURIComponent(itermUuid), { method: 'POST' });
 }
 
-function parkSession(itermUuid, badge) {
+function parkSession(itermUuid, badge, fileSize) {
   const modal = document.getElementById('park-modal');
   document.getElementById('park-modal-badge').textContent = badge || itermUuid.slice(0, 12) + '...';
+  document.getElementById('park-modal-size').textContent = fileSize ? formatFileSize(fileSize) : 'N/A';
   document.getElementById('park-modal-confirm').onclick = async function() {
     closeParkModal();
     await fetch(API + '/api/park/' + encodeURIComponent(itermUuid), { method: 'POST' });
