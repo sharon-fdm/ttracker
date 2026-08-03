@@ -2251,9 +2251,17 @@ function changeStickyColor(id, color) {
 }
 
 let justFinishedAction = false;
+let lastBoardHeight = 0;
 function onBoardClick(e) {
   if (e.target.id !== 'sticky-board') return;
   if (justFinishedAction) { justFinishedAction = false; return; }
+  // Skip if board was just resized (height changed)
+  const board = document.getElementById('sticky-board');
+  if (lastBoardHeight && Math.abs(board.offsetHeight - lastBoardHeight) > 5) {
+    lastBoardHeight = board.offsetHeight;
+    return;
+  }
+  lastBoardHeight = board.offsetHeight;
   const board = document.getElementById('sticky-board');
   const rect = board.getBoundingClientRect();
   const x = Math.max(0, Math.min(e.clientX - rect.left - 80, rect.width - 170));
