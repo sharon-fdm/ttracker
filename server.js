@@ -1155,6 +1155,30 @@ end tell`);
     return;
   }
 
+  // GET /api/stickies-height
+  if (req.method === 'GET' && url.pathname === '/api/stickies-height') {
+    const state = loadState();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ height: state.stickyBoardHeight || 0 }));
+    return;
+  }
+
+  // PUT /api/stickies-height
+  if (req.method === 'PUT' && url.pathname === '/api/stickies-height') {
+    const body = await new Promise((resolve) => {
+      let data = '';
+      req.on('data', c => data += c);
+      req.on('end', () => resolve(data));
+    });
+    const { height } = JSON.parse(body);
+    const state = loadState();
+    state.stickyBoardHeight = height;
+    saveState(state);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
   // GET /api/stickies
   if (req.method === 'GET' && url.pathname === '/api/stickies') {
     const state = loadState();
@@ -1471,6 +1495,8 @@ function getDashboardHTML() {
     border: 2px dashed var(--bg-border);
     border-radius: 8px;
     cursor: crosshair;
+    resize: vertical;
+    overflow: hidden;
   }
   .sticky-board:empty::after {
     content: 'Click anywhere to add a sticky note';
@@ -2145,11 +2171,33 @@ function toggleStickies() {
   localStorage.setItem('tt-stickies-visible', visible ? '0' : '1');
 }
 
-// Restore sticky visibility (hidden by default in HTML)
+// Restore sticky visibility and height
 if (localStorage.getItem('tt-stickies-visible') === '1') {
   document.getElementById('sticky-board').style.display = '';
   document.getElementById('sticky-toggle').textContent = 'Hide Notes';
 }
+
+// Restore saved board height
+(async function() {
+  try {
+    const res = await fetch(API + '/api/stickies-height');
+    const { height } = await res.json();
+    if (height) document.getElementById('sticky-board').style.height = height + 'px';
+  } catch {}
+})();
+
+// Save board height on resize
+new ResizeObserver(() => {
+  const board = document.getElementById('sticky-board');
+  if (board.style.display !== 'none') {
+    const h = board.offsetHeight;
+    if (h > 0) fetch(API + '/api/stickies-height', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ height: h })
+    });
+  }
+}).observe(document.getElementById('sticky-board'));
 
 // ─── Sticky Notes ────────────────────────────────────────────────
 let stickies = [];
