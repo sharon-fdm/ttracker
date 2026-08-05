@@ -277,6 +277,18 @@ async function takeSnapshot() {
         }
       }
 
+      // If Claude is no longer running but this TTY had a session before, preserve it
+      if (!claudeSessionId) {
+        const prevState = loadState();
+        if (prevState.snapshot && prevState.snapshot.sessions) {
+          const prev = prevState.snapshot.sessions.find(s => s.iterm_uuid === itermUuid);
+          if (prev && prev.claude_session_id) {
+            claudeSessionId = prev.claude_session_id;
+            cwd = cwd || prev.cwd || '';
+          }
+        }
+      }
+
       // Get cwd from the shell process if not already set (non-Claude terminals)
       if (!cwd) {
         const shellMatch = psOut.split('\n').find(l => l.includes('-zsh') || l.includes('bash'));
