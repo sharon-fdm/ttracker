@@ -1783,6 +1783,10 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
+function escapeAttr(s) {
+  return (s || '').replace(/\\/g, '\\\\\\\\').replace(/'/g, "\\\\'").replace(/"/g, '&quot;');
+}
+
 function statusDot(status) {
   const labels = { running: 'running', missing: 'missing', killed: 'killed', parked: 'parked', 'no-claude': 'idle' };
   return '<span class="status status-' + status + '"><span class="dot dot-' + status + '"></span>' + (labels[status] || status) + '</span>';
@@ -1823,7 +1827,7 @@ function renderActive(data) {
     if (s.status === 'running' || s.status === 'no-claude') {
       action = '<button class="btn btn-focus" onclick="focusSession(\\'' + s.iterm_uuid + '\\')">Focus</button>';
       if (!isTtracker) {
-        action += ' <button class="btn btn-park" onclick="parkSession(\\'' + s.iterm_uuid + '\\', \\'' + escapeHtml(s.badge) + '\\', ' + (s.file_size || 0) + ')">Park</button>';
+        action += ' <button class="btn btn-park" onclick="parkSession(\\'' + s.iterm_uuid + '\\', \\'' + escapeAttr(s.badge) + '\\', ' + (s.file_size || 0) + ')">Park</button>';
       }
     } else if (s.status === 'missing') {
       action = '<button class="btn btn-restore" onclick="restoreSession(\\'' + s.claude_session_id + '\\')">Restore</button>'
@@ -1869,7 +1873,7 @@ function renderHistory(entries) {
       action = '<span style="color:#859900;font-size:12px">open</span>';
     } else {
       action = '<button class="btn btn-restore" onclick="restoreFromHistory(\\'' + hKey + '\\')">Restore</button>'
-        + ' <button class="btn btn-delete" onclick="confirmDelete(\\'' + hKey + '\\', \\'' + escapeHtml(h.badge) + '\\', ' + (h.file_size || 0) + ')">Delete</button>';
+        + ' <button class="btn btn-delete" onclick="confirmDelete(\\'' + hKey + '\\', \\'' + escapeAttr(h.badge) + '\\', ' + (h.file_size || 0) + ')">Delete</button>';
     }
     const noteVal = escapeHtml(h.note);
     const folder = h.cwd ? h.cwd.replace(/^\\/Users\\/[^\\/]+\\//, '~/') : '';
