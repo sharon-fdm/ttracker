@@ -1784,7 +1784,7 @@ function escapeHtml(s) {
 }
 
 function escapeAttr(s) {
-  return (s || '').replace(/\\/g, '\\\\\\\\').replace(/'/g, "\\\\'").replace(/"/g, '&quot;');
+  return (s || '').replace(/'/g, '&#39;').replace(/"/g, '&quot;');
 }
 
 function statusDot(status) {
