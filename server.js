@@ -2278,7 +2278,6 @@ function onBoardClick(e) {
     return;
   }
   lastBoardHeight = board.offsetHeight;
-  const board = document.getElementById('sticky-board');
   const rect = board.getBoundingClientRect();
   const x = Math.max(0, Math.min(e.clientX - rect.left - 80, rect.width - 170));
   const y = Math.max(0, Math.min(e.clientY - rect.top - 30, rect.height - 70));
