@@ -834,9 +834,11 @@ async function handleAPI(req, res) {
     }
 
     const state = loadState();
+    const runningIds = getRunningSessionIds();
     const existingIds = new Set([
       ...state.snapshot.sessions.filter(s => s.claude_session_id).map(s => s.claude_session_id),
-      ...state.history.filter(h => h.claude_session_id).map(h => h.claude_session_id)
+      ...state.history.filter(h => h.claude_session_id).map(h => h.claude_session_id),
+      ...runningIds
     ]);
 
     const files = fs.readdirSync(fullDir).filter(f => f.endsWith('.jsonl'));
