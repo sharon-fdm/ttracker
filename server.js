@@ -2302,6 +2302,7 @@ function renderStickies() {
     + '<div class="sticky-colors">'
     + '<div class="sticky-color-btn" style="background:#859900" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#859900\\')"></div>'
     + '<div class="sticky-color-btn" style="background:#6c71c4" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#6c71c4\\')"></div>'
+    + '<div class="sticky-color-btn" style="background:#268bd2" onclick="changeStickyColor(\\'' + s.id + '\\', \\'#268bd2\\')"></div>'
     + '</div>'
     + '<button class="sticky-delete" onclick="confirmDeleteSticky(\\'' + s.id + '\\')" title="Delete">&times;</button>'
     + '<textarea class="sticky-text" onmousedown="event.stopPropagation()" '
