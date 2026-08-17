@@ -692,10 +692,14 @@ async function handleAPI(req, res) {
     const running = getRunningSessionIds();
     const parkedIds = new Set(state.history.filter(h => h.claude_session_id).map(h => h.claude_session_id));
 
+    const pairIds = pairs.getPairSessionIds();
     const sessions = state.snapshot.sessions
       .filter(s => {
         const key = s.claude_session_id || s.iterm_uuid;
-        return !parkedIds.has(key);
+        if (parkedIds.has(key)) return false;
+        // Hide sessions that belong to active pairs (shown in Dev Pairs table)
+        if (pairIds.has(s.claude_session_id) || pairIds.has(s.iterm_uuid)) return false;
+        return true;
       })
       .map(s => ({
         ...s,
@@ -2518,8 +2522,6 @@ function renderPairs(pairsData) {
       + '<td class="parked-at">' + escapeHtml(p.created_at) + '</td>'
       + '<td><span class="status status-running"><span class="dot dot-running"></span>active</span></td>'
       + '<td class="actions">'
-      + '<button class="btn btn-focus" onclick="relayToMate(\\'' + p.id + '\\')">Relay to Mate</button> '
-      + '<button class="btn btn-restore" onclick="relayToCaptain(\\'' + p.id + '\\')">Relay to Captain</button> '
       + '<button class="btn" style="background:var(--cyan)" onclick="viewCommLog(\\'' + p.id + '\\')">Log</button> '
       + '<button class="btn btn-park" onclick="parkPair(\\'' + p.id + '\\')">Park</button>'
       + '</td></tr>';
