@@ -352,7 +352,9 @@ async function takeSnapshot() {
           return match ? match[1] : l;
         }).filter(l => l && !l.startsWith('fc ')
           && !l.includes('tt-restore') && !l.includes('tt-hist')
-          && !l.includes('SetBadgeFormat') && !l.includes('source /var/folders'));
+          && !l.includes('SetBadgeFormat') && !l.includes('source /var/folders')
+          && !l.includes('claude --dangerously') && !l.includes('claude --resume')
+          && !l.includes('&& clear') && !l.includes('--name '));
         for (const sess of sessions) {
           if (!sess.claude_session_id && (sess.process === '-zsh' || sess.process === 'bash' || sess.process === 'zsh')) {
             state.notes[`hist:${sess.iterm_uuid}`] = cmds;
@@ -572,7 +574,7 @@ async function restoreSession(sessionId, fromHistory) {
   const badgeB64 = Buffer.from(session.badge || '').toString('base64');
 
   // Filter ttracker noise from command history
-  const noisePatterns = ['source /var/folders', 'tt-restore', 'tt-hist', 'SetBadgeFormat', 'printf.*1337', 'rm -f /var/folders'];
+  const noisePatterns = ['source /var/folders', 'tt-restore', 'tt-hist', 'SetBadgeFormat', 'printf.*1337', 'rm -f /var/folders', 'claude --dangerously', 'claude --resume', 'cd /Users/', "cd '/Users/", '&& clear', '--name '];
   const cleanHistory = (session.cmd_history || []).filter(cmd => {
     return !noisePatterns.some(p => cmd.includes(p) || cmd.match(new RegExp(p)));
   });
@@ -603,7 +605,16 @@ async function restoreSession(sessionId, fromHistory) {
     commands.push(`write text "${launchCmd}"`);
   } else if (histFile) {
     commands.push(`delay 0.5`);
-    commands.push(`write text "printf '\\\\033[1;36m--- Last commands before parking ---\\\\033[0m'; cat ${histFile}; printf '\\\\033[1;36m------\\\\033[0m'; echo ''; rm -f ${histFile}"`);
+    const showScript = path.join(os.tmpdir(), `tt-show-${Date.now()}.sh`);
+    fs.writeFileSync(showScript, [
+      '#!/bin/bash',
+      `printf '\\033[1;36m--- Last commands before parking ---\\033[0m\\n'`,
+      `cat ${histFile}`,
+      `printf '\\033[1;36m------\\033[0m\\n'`,
+      `rm -f ${histFile} ${showScript}`
+    ].join('\\n') + '\\n');
+    fs.chmodSync(showScript, '755');
+    commands.push(`write text "source ${showScript}"`);
   }
 
   fs.writeFileSync(tmpFile, `tell application "iTerm2"
@@ -1023,7 +1034,7 @@ end tell`);
     // Open new terminal with badge, cd, and history display
     const cwd = (session.cwd || os.homedir()).replace(/'/g, "'\\''");
     const badgeB64 = Buffer.from(session.badge || '').toString('base64');
-    const noisePatterns = ['source /var/folders', 'tt-restore', 'tt-hist', 'SetBadgeFormat', 'printf.*1337', 'rm -f /var/folders'];
+    const noisePatterns = ['source /var/folders', 'tt-restore', 'tt-hist', 'SetBadgeFormat', 'printf.*1337', 'rm -f /var/folders', 'claude --dangerously', 'claude --resume', 'cd /Users/', "cd '/Users/", '&& clear', '--name '];
     const cleanHistory = (session.cmd_history || []).filter(cmd =>
       !noisePatterns.some(p => cmd.includes(p) || cmd.match(new RegExp(p))));
 
@@ -1036,7 +1047,16 @@ end tell`);
     const commands = [`write text "cd '${cwd}' && clear"`];
     if (histFile) {
       commands.push('delay 0.5');
-      commands.push(`write text "printf '\\\\033[1;36m--- Last commands before parking ---\\\\033[0m'; cat ${histFile}; printf '\\\\033[1;36m------\\\\033[0m'; echo ''; rm -f ${histFile}"`);
+      const showScript = path.join(os.tmpdir(), `tt-show-${Date.now()}.sh`);
+    fs.writeFileSync(showScript, [
+      '#!/bin/bash',
+      `printf '\\033[1;36m--- Last commands before parking ---\\033[0m\\n'`,
+      `cat ${histFile}`,
+      `printf '\\033[1;36m------\\033[0m\\n'`,
+      `rm -f ${histFile} ${showScript}`
+    ].join('\\n') + '\\n');
+    fs.chmodSync(showScript, '755');
+    commands.push(`write text "source ${showScript}"`);
     }
 
     const tmpFile = path.join(os.tmpdir(), `tt-restore-${Date.now()}.applescript`);
