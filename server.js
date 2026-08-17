@@ -1696,8 +1696,8 @@ function getDashboardHTML() {
 </div>
 
 <div class="new-session">
-  <input id="pair-captain" type="text" placeholder="Captain name" style="width:140px" />
-  <input id="pair-mate" type="text" placeholder="First Mate name" style="width:140px" />
+  <input id="pair-name" type="text" placeholder="Dev pair name" style="width:180px" onkeydown="if(event.key==='Enter')document.getElementById('pair-btn').click()" oninput="document.getElementById('pair-preview').textContent=this.value?'Captain: '+this.value+' | First Mate: [FM] '+this.value:''" />
+  <span id="pair-preview" style="color:var(--fg-muted);font-size:11px"></span>
   <button id="pair-btn" class="btn-new" style="background:var(--violet)" onclick="createPair()">&#9875; Dev Pair</button>
   <span id="pair-status" style="color:var(--fg-muted);font-size:12px;margin-left:8px"></span>
 </div>
@@ -2529,14 +2529,15 @@ function renderPairs(pairsData) {
 }
 
 async function createPair() {
-  const captainInput = document.getElementById('pair-captain');
-  const mateInput = document.getElementById('pair-mate');
+  const nameInput = document.getElementById('pair-name');
   const btn = document.getElementById('pair-btn');
   const status = document.getElementById('pair-status');
 
-  const captainBadge = captainInput.value.trim();
-  const firstMateBadge = mateInput.value.trim();
-  if (!captainBadge || !firstMateBadge) { status.textContent = 'Both names required'; return; }
+  const name = nameInput.value.trim();
+  if (!name) { status.textContent = 'Name required'; return; }
+
+  const captainBadge = name;
+  const firstMateBadge = '[FM] ' + name;
 
   btn.disabled = true;
   btn.textContent = 'Creating...';
@@ -2551,8 +2552,8 @@ async function createPair() {
     const data = await res.json();
     if (data.ok) {
       status.textContent = 'Pair created!';
-      captainInput.value = '';
-      mateInput.value = '';
+      nameInput.value = '';
+      document.getElementById('pair-preview').textContent = '';
       await refresh();
     } else {
       status.textContent = 'Error: ' + data.error;
