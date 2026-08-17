@@ -15,6 +15,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFile, exec } = require('node:child_process');
 const os = require('node:os');
+const pairs = require('./lib/pairs');
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -1257,6 +1258,11 @@ end tell`);
     return;
   }
 
+  // Delegate to pairs module
+  if (pathParts[1] === 'pairs') {
+    return pairs.handlePairAPI(req, res, url, pathParts);
+  }
+
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Not found' }));
 }
@@ -1686,6 +1692,13 @@ function getDashboardHTML() {
 </div>
 
 <div class="new-session">
+  <input id="pair-captain" type="text" placeholder="Captain name" style="width:140px" />
+  <input id="pair-mate" type="text" placeholder="First Mate name" style="width:140px" />
+  <button id="pair-btn" class="btn-new" style="background:var(--violet)" onclick="createPair()">&#9875; Create Pair</button>
+  <span id="pair-status" style="color:var(--fg-muted);font-size:12px;margin-left:8px"></span>
+</div>
+
+<div class="new-session">
   <input id="search-input" type="text" placeholder="Search all Claude sessions..." style="width:350px" onkeydown="if(event.key==='Enter')searchSessions()" />
   <button id="search-btn" class="btn-new" style="background:#6c71c4" onclick="searchSessions()">Search</button>
   <button id="search-cancel" class="btn-new" style="background:#dc322f;display:none" onclick="cancelSearch()">Cancel</button>
@@ -1740,6 +1753,22 @@ function getDashboardHTML() {
   <tbody id="active-body"></tbody>
 </table>
 
+<h2 style="color:var(--violet);border-left-color:var(--violet)">&#9875; Paired Sessions <span class="count" id="pairs-count"></span></h2>
+<table>
+  <thead>
+    <tr>
+      <th style="width:50px">#</th>
+      <th>Captain</th>
+      <th>First Mate</th>
+      <th>Messages</th>
+      <th>Created</th>
+      <th>Status</th>
+      <th style="width:350px">Actions</th>
+    </tr>
+  </thead>
+  <tbody id="pairs-body"></tbody>
+</table>
+
 <h2 class="history-heading">Parked Sessions <span class="count" id="history-count"></span></h2>
 <table>
   <thead>
@@ -1791,6 +1820,17 @@ function getDashboardHTML() {
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeStickyDeleteModal()">Cancel</button>
       <button class="btn btn-confirm-delete" id="sticky-delete-confirm">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div id="comm-modal" class="modal-overlay">
+  <div class="modal" style="border-color: var(--violet);max-width:700px">
+    <h3 style="color: var(--violet)">&#9875; Comm Log</h3>
+    <pre id="comm-log-content" style="white-space:pre-wrap;font-size:12px;max-height:400px;overflow-y:auto;padding:12px;background:var(--bg-alt);border-radius:4px;margin:12px 0"></pre>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeCommModal()">Close</button>
+      <button class="btn" style="background:var(--cyan)" onclick="refreshCommLog()">Refresh</button>
     </div>
   </div>
 </div>
@@ -1893,15 +1933,19 @@ function renderHistory(entries) {
     let action = '';
     if (h.status === 'running') {
       action = '<span style="color:#859900;font-size:12px">open</span>';
+    } else if (h.is_pair) {
+      action = '<button class="btn btn-restore" onclick="restorePair(\\'' + (h.pair_id || '') + '\\')">Restore Pair</button>'
+        + ' <button class="btn btn-delete" onclick="confirmDelete(\\'' + hKey + '\\', \\'' + escapeAttr(h.badge) + '\\', 0)">Delete</button>';
     } else {
       action = '<button class="btn btn-restore" onclick="restoreFromHistory(\\'' + hKey + '\\')">Restore</button>'
         + ' <button class="btn btn-delete" onclick="confirmDelete(\\'' + hKey + '\\', \\'' + escapeAttr(h.badge) + '\\', ' + (h.file_size || 0) + ')">Delete</button>';
     }
     const noteVal = escapeHtml(h.note);
     const folder = h.cwd ? h.cwd.replace(/^\\/Users\\/[^\\/]+\\//, '~/') : '';
+    const pairIcon = h.is_pair ? '<span style="color:var(--violet)" title="Paired">&#9875; </span>' : '';
     return '<tr>'
       + '<td>' + (i + 1) + '</td>'
-      + '<td><input class="badge-input" value="' + escapeHtml(h.badge) + '" placeholder="name" '
+      + '<td>' + pairIcon + '<input class="badge-input" value="' + escapeHtml(h.badge) + '" placeholder="name" '
       + 'onblur="saveBadge(\\'' + hKey + '\\', this.value, \\'\\')" '
       + 'onkeydown="if(event.key===\\'Enter\\')this.blur()" /></td>'
       + '<td>' + escapeHtml(h.session_name) + '</td>'
@@ -1920,9 +1964,10 @@ function renderHistory(entries) {
 async function refresh() {
   // Skip refresh if user is typing in a note field
   if (document.activeElement && (document.activeElement.classList.contains('note-input') || document.activeElement.classList.contains('badge-input'))) return;
-  const [sessions, history] = await Promise.all([fetchSessions(), fetchHistory()]);
+  const [sessions, history, pairsData] = await Promise.all([fetchSessions(), fetchHistory(), fetchPairs()]);
   renderActive(sessions);
   renderHistory(history);
+  renderPairs(pairsData);
 }
 
 function confirmDelete(sessionId, badge, fileSize) {
@@ -2256,6 +2301,7 @@ document.addEventListener('keydown', function(e) {
     closeModal();
     closeParkModal();
     closeStickyDeleteModal();
+    closeCommModal();
   }
   if (e.key === 'z' && (e.metaKey || e.ctrlKey) && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
     undoDeleteSticky();
@@ -2444,6 +2490,118 @@ async function loadStickies() {
   } catch {}
 }
 
+// ─── Paired Terminals ────────────────────────────────────────────────
+let currentCommPairId = '';
+
+async function fetchPairs() {
+  try {
+    const res = await fetch(API + '/api/pairs');
+    return await res.json();
+  } catch { return []; }
+}
+
+function renderPairs(pairsData) {
+  const el = document.getElementById('pairs-body');
+  document.getElementById('pairs-count').textContent = '(' + pairsData.length + ')';
+
+  if (pairsData.length === 0) {
+    el.innerHTML = '<tr><td colspan="7" class="empty-state">No active pairs</td></tr>';
+    return;
+  }
+
+  el.innerHTML = pairsData.map((p, i) => {
+    return '<tr>'
+      + '<td>' + (i + 1) + '</td>'
+      + '<td class="badge-cell">' + escapeHtml(p.captain.badge) + '</td>'
+      + '<td class="badge-cell">' + escapeHtml(p.first_mate.badge) + '</td>'
+      + '<td>' + (p.comm_messages || 0) + '</td>'
+      + '<td class="parked-at">' + escapeHtml(p.created_at) + '</td>'
+      + '<td><span class="status status-running"><span class="dot dot-running"></span>active</span></td>'
+      + '<td class="actions">'
+      + '<button class="btn btn-focus" onclick="relayToMate(\\'' + p.id + '\\')">Relay to Mate</button> '
+      + '<button class="btn btn-restore" onclick="relayToCaptain(\\'' + p.id + '\\')">Relay to Captain</button> '
+      + '<button class="btn" style="background:var(--cyan)" onclick="viewCommLog(\\'' + p.id + '\\')">Log</button> '
+      + '<button class="btn btn-park" onclick="parkPair(\\'' + p.id + '\\')">Park</button>'
+      + '</td></tr>';
+  }).join('');
+}
+
+async function createPair() {
+  const captainInput = document.getElementById('pair-captain');
+  const mateInput = document.getElementById('pair-mate');
+  const btn = document.getElementById('pair-btn');
+  const status = document.getElementById('pair-status');
+
+  const captainBadge = captainInput.value.trim();
+  const firstMateBadge = mateInput.value.trim();
+  if (!captainBadge || !firstMateBadge) { status.textContent = 'Both names required'; return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+  status.textContent = 'Opening terminals...';
+
+  try {
+    const res = await fetch(API + '/api/pairs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ captainBadge, firstMateBadge })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      status.textContent = 'Pair created!';
+      captainInput.value = '';
+      mateInput.value = '';
+      await refresh();
+    } else {
+      status.textContent = 'Error: ' + data.error;
+    }
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+
+  btn.innerHTML = '&#9875; Create Pair';
+  btn.disabled = false;
+}
+
+async function relayToMate(pairId) {
+  await fetch(API + '/api/pairs/' + pairId + '/relay-to-mate', { method: 'POST' });
+}
+
+async function relayToCaptain(pairId) {
+  await fetch(API + '/api/pairs/' + pairId + '/relay-to-captain', { method: 'POST' });
+}
+
+async function parkPair(pairId) {
+  await fetch(API + '/api/pairs/' + pairId + '/park', { method: 'POST' });
+  await refresh();
+}
+
+async function viewCommLog(pairId) {
+  currentCommPairId = pairId;
+  const res = await fetch(API + '/api/pairs/' + pairId + '/comm');
+  const data = await res.json();
+  const content = document.getElementById('comm-log-content');
+  content.textContent = data.messages || '(empty)';
+  document.getElementById('comm-modal').classList.add('active');
+}
+
+async function refreshCommLog() {
+  if (!currentCommPairId) return;
+  const res = await fetch(API + '/api/pairs/' + currentCommPairId + '/comm');
+  const data = await res.json();
+  document.getElementById('comm-log-content').textContent = data.messages || '(empty)';
+}
+
+function closeCommModal() {
+  document.getElementById('comm-modal').classList.remove('active');
+  currentCommPairId = '';
+}
+
+async function restorePair(pairId) {
+  await fetch(API + '/api/pairs/' + pairId + '/restore', { method: 'POST' });
+  await refresh();
+}
+
 // Initial load + auto-refresh
 refresh();
 loadProjects();
@@ -2478,6 +2636,10 @@ async function handleRequest(req, res) {
     res.end(JSON.stringify({ error: err.message }));
   }
 }
+
+// ─── Pairs Integration ───────────────────────────────────────────────────────
+
+pairs.init({ runOsascript, runOsascriptFile, loadState, saveState, takeSnapshot, SNAPSHOT_DIR, SAFE_MODE });
 
 // ─── Startup ─────────────────────────────────────────────────────────────────
 
