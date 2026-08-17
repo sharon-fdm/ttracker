@@ -1694,7 +1694,7 @@ function getDashboardHTML() {
 <div class="new-session">
   <input id="pair-captain" type="text" placeholder="Captain name" style="width:140px" />
   <input id="pair-mate" type="text" placeholder="First Mate name" style="width:140px" />
-  <button id="pair-btn" class="btn-new" style="background:var(--violet)" onclick="createPair()">&#9875; Create Pair</button>
+  <button id="pair-btn" class="btn-new" style="background:var(--violet)" onclick="createPair()">&#9875; Dev Pair</button>
   <span id="pair-status" style="color:var(--fg-muted);font-size:12px;margin-left:8px"></span>
 </div>
 
@@ -1753,7 +1753,7 @@ function getDashboardHTML() {
   <tbody id="active-body"></tbody>
 </table>
 
-<h2 style="color:var(--violet);border-left-color:var(--violet)">&#9875; Paired Sessions <span class="count" id="pairs-count"></span></h2>
+<h2 style="color:var(--violet);border-left-color:var(--violet)">&#9875; Dev Pairs <span class="count" id="pairs-count"></span></h2>
 <table>
   <thead>
     <tr>
@@ -2559,7 +2559,7 @@ async function createPair() {
     status.textContent = 'Error: ' + e.message;
   }
 
-  btn.innerHTML = '&#9875; Create Pair';
+  btn.innerHTML = '&#9875; Dev Pair';
   btn.disabled = false;
 }
 
