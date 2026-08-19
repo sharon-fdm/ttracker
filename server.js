@@ -1523,7 +1523,7 @@ function getDashboardHTML() {
   }
   .sticky-board {
     position: relative;
-    flex: 1;
+    width: 100%;
     min-height: 150px;
     background: var(--bg-alt);
     border: 2px dashed var(--bg-border);
@@ -1673,9 +1673,12 @@ function getDashboardHTML() {
     <span id="session-counts"></span>
     <button class="refresh-btn" onclick="forceSnapshot()">Snapshot Now</button>
     <button class="refresh-btn" onclick="minimizeAll()">Minimize All</button>
+    <button class="refresh-btn" onclick="toggleStickies()" id="sticky-toggle">Show Notes</button>
     <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Toggle light/dark">&#9789; Dark</button>
   </div>
 </div>
+
+<div id="sticky-board" class="sticky-board" style="display:none" onclick="onBoardClick(event)"></div>
 
 <div class="top-panel">
 <div class="top-controls">
@@ -1716,10 +1719,9 @@ function getDashboardHTML() {
   <span id="import-status" style="color:#93a1a1;font-size:12px;margin-left:8px"></span>
 </div>
 
-<button class="btn-new" style="background:var(--green);padding:4px 10px;font-size:11px" id="sticky-toggle" onclick="toggleStickies()">Show Notes</button>
+
 
 </div>
-<div id="sticky-board" class="sticky-board" style="display:none" onclick="onBoardClick(event)"></div>
 </div>
 
 <h2>Active Sessions <span class="count" id="active-count"></span></h2>
