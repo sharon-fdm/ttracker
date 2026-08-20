@@ -718,19 +718,15 @@ async function handleAPI(req, res) {
         const name = s.session_name || '';
         const firstChar = name.charAt(0);
         // Claude status: ✳ = waiting for input, spinner dots = working
-        let claudeStatus = '';
-        if (s.claude_session_id && running.has(s.claude_session_id)) {
-          claudeStatus = (firstChar === '\u2733' || firstChar === '*') ? 'waiting' : 'working';
-        }
         return {
           ...s,
           note: state.notes[s.claude_session_id] || state.notes[s.iterm_uuid] || '',
           file_size: getSessionFileSize(s.claude_session_id),
-          claude_status: claudeStatus,
           status: s.process === 'killed' ? 'killed'
             : !s.claude_session_id ? 'no-claude'
-            : running.has(s.claude_session_id) ? 'running'
-            : 'missing'
+            : !running.has(s.claude_session_id) ? 'missing'
+            : (firstChar === '\u2733' || firstChar === '*') ? 'waiting'
+            : 'working'
         };
       });
 
@@ -1426,9 +1422,12 @@ function getDashboardHTML() {
   .dot-running { background: var(--green); }
   .dot-missing { background: var(--red); }
   .dot-parked { background: var(--violet); }
+  .dot-working { background: var(--orange); }
+  .dot-waiting { background: var(--cyan); }
   .dot-killed { background: var(--orange); }
   .dot-no-claude { background: var(--fg-muted); }
-  .status-running { color: var(--green); }
+  .status-working { color: var(--orange); }
+  .status-waiting { color: var(--cyan); }
   .status-missing { color: var(--red); }
   .status-parked { color: var(--violet); }
   .status-killed { color: var(--orange); }
@@ -1841,7 +1840,7 @@ function escapeAttr(s) {
 }
 
 function statusDot(status) {
-  const labels = { running: 'running', missing: 'missing', killed: 'killed', parked: 'parked', 'no-claude': 'idle' };
+  const labels = { working: 'working', waiting: 'waiting', missing: 'missing', killed: 'killed', parked: 'parked', 'no-claude': 'idle' };
   return '<span class="status status-' + status + '"><span class="dot dot-' + status + '"></span>' + (labels[status] || status) + '</span>';
 }
 
@@ -1877,7 +1876,7 @@ function renderActive(data) {
   el.innerHTML = sessions.map((s, i) => {
     const isTtracker = s.session_name.includes('server.js') || (s.badge || '').toLowerCase() === 'ttracker';
     let action = '';
-    if (s.status === 'running' || s.status === 'no-claude') {
+    if (s.status === 'working' || s.status === 'waiting' || s.status === 'no-claude') {
       action = '<button class="btn btn-focus" onclick="focusSession(\\'' + s.iterm_uuid + '\\')">Focus</button>';
       if (!isTtracker) {
         action += ' <button class="btn btn-park" onclick="parkSession(\\'' + s.iterm_uuid + '\\', \\'' + escapeAttr(s.badge) + '\\', ' + (s.file_size || 0) + ')">Park</button>';
@@ -1904,7 +1903,7 @@ function renderActive(data) {
       + 'onkeydown="if(event.key===\\'Enter\\')this.blur()" /></td>'
       + '<td class="process-cell">' + escapeHtml(s.process) + '</td>'
       + '<td class="session-id">' + escapeHtml(s.claude_session_id) + '</td>'
-      + '<td>' + statusDot(s.status) + (s.claude_status ? '<br><span style="font-size:10px;color:' + (s.claude_status === 'working' ? 'var(--orange)' : 'var(--cyan)') + '">' + (s.claude_status === 'working' ? '&#9881; working' : '&#9203; waiting') + '</span>' : '') + '</td>'
+      + '<td>' + statusDot(s.status) + '</td>'
       + '<td class="actions">' + action + '</td>'
       + '</tr>';
   }).join('');
