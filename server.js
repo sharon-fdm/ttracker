@@ -1525,6 +1525,7 @@ function getDashboardHTML() {
     position: relative;
     width: 100%;
     min-height: 150px;
+    margin-bottom: 16px;
     background: var(--bg-alt);
     border: 2px dashed var(--bg-border);
     border-radius: 8px;
