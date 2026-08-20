@@ -691,20 +691,48 @@ async function handleAPI(req, res) {
     const running = getRunningSessionIds();
     const parkedIds = new Set(state.history.filter(h => h.claude_session_id).map(h => h.claude_session_id));
 
+    // Quick check: get current session names from iTerm2 for live claude status
+    const liveNames = {};
+    try {
+      const nameData = await runOsascript(ITERM_APPLESCRIPT).catch(() => '');
+      if (nameData) {
+        for (const line of nameData.split('\n').filter(l => l.trim())) {
+          const parts = line.split('\t');
+          if (parts.length >= 7) {
+            liveNames[parts[3]] = parts.slice(6).join('\t'); // iterm_uuid -> session_name
+          }
+        }
+      }
+    } catch {}
+    // Update session names with live data
+    for (const s of state.snapshot.sessions) {
+      if (liveNames[s.iterm_uuid]) s.session_name = liveNames[s.iterm_uuid];
+    }
+
     const sessions = state.snapshot.sessions
       .filter(s => {
         const key = s.claude_session_id || s.iterm_uuid;
         return !parkedIds.has(key);
       })
-      .map(s => ({
-        ...s,
-        note: state.notes[s.claude_session_id] || state.notes[s.iterm_uuid] || '',
-        file_size: getSessionFileSize(s.claude_session_id),
-        status: s.process === 'killed' ? 'killed'
-          : !s.claude_session_id ? 'no-claude'
-          : running.has(s.claude_session_id) ? 'running'
-          : 'missing'
-      }));
+      .map(s => {
+        const name = s.session_name || '';
+        const firstChar = name.charAt(0);
+        // Claude status: ✳ = waiting for input, spinner dots = working
+        let claudeStatus = '';
+        if (s.claude_session_id && running.has(s.claude_session_id)) {
+          claudeStatus = (firstChar === '\u2733' || firstChar === '*') ? 'waiting' : 'working';
+        }
+        return {
+          ...s,
+          note: state.notes[s.claude_session_id] || state.notes[s.iterm_uuid] || '',
+          file_size: getSessionFileSize(s.claude_session_id),
+          claude_status: claudeStatus,
+          status: s.process === 'killed' ? 'killed'
+            : !s.claude_session_id ? 'no-claude'
+            : running.has(s.claude_session_id) ? 'running'
+            : 'missing'
+        };
+      });
 
     // Sort by last_active descending (most recent first)
     sessions.sort((a, b) => (b.last_active || '').localeCompare(a.last_active || ''));
@@ -1876,7 +1904,7 @@ function renderActive(data) {
       + 'onkeydown="if(event.key===\\'Enter\\')this.blur()" /></td>'
       + '<td class="process-cell">' + escapeHtml(s.process) + '</td>'
       + '<td class="session-id">' + escapeHtml(s.claude_session_id) + '</td>'
-      + '<td>' + statusDot(s.status) + '</td>'
+      + '<td>' + statusDot(s.status) + (s.claude_status ? '<br><span style="font-size:10px;color:' + (s.claude_status === 'working' ? 'var(--orange)' : 'var(--cyan)') + '">' + (s.claude_status === 'working' ? '&#9881; working' : '&#9203; waiting') + '</span>' : '') + '</td>'
       + '<td class="actions">' + action + '</td>'
       + '</tr>';
   }).join('');
