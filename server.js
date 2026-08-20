@@ -723,7 +723,8 @@ async function handleAPI(req, res) {
           note: state.notes[s.claude_session_id] || state.notes[s.iterm_uuid] || '',
           file_size: getSessionFileSize(s.claude_session_id),
           status: s.process === 'killed' ? 'killed'
-            : !s.claude_session_id ? 'no-claude'
+            : !s.claude_session_id
+              ? (s.process === '-zsh' || s.process === 'bash' || s.process === 'zsh' ? 'no-claude' : 'no-claude-running')
             : !running.has(s.claude_session_id) ? 'missing'
             : (firstChar === '\u2733' || firstChar === '*') ? 'waiting'
             : 'working'
@@ -1426,12 +1427,14 @@ function getDashboardHTML() {
   .dot-waiting { background: var(--cyan); }
   .dot-killed { background: var(--orange); }
   .dot-no-claude { background: var(--fg-muted); }
+  .dot-no-claude-running { background: var(--green); }
   .status-working { color: var(--orange); }
   .status-waiting { color: var(--cyan); }
   .status-missing { color: var(--red); }
   .status-parked { color: var(--violet); }
   .status-killed { color: var(--orange); }
   .status-no-claude { color: var(--fg-muted); }
+  .status-no-claude-running { color: var(--green); }
   .btn {
     border: none;
     border-radius: 5px;
@@ -1840,7 +1843,7 @@ function escapeAttr(s) {
 }
 
 function statusDot(status) {
-  const labels = { working: 'working', waiting: 'waiting', missing: 'missing', killed: 'killed', parked: 'parked', 'no-claude': 'idle' };
+  const labels = { working: 'claude busy', waiting: 'claude ready', missing: 'missing', killed: 'killed', parked: 'parked', 'no-claude': 'idle', 'no-claude-running': 'running' };
   return '<span class="status status-' + status + '"><span class="dot dot-' + status + '"></span>' + (labels[status] || status) + '</span>';
 }
 
@@ -1876,7 +1879,7 @@ function renderActive(data) {
   el.innerHTML = sessions.map((s, i) => {
     const isTtracker = s.session_name.includes('server.js') || (s.badge || '').toLowerCase() === 'ttracker';
     let action = '';
-    if (s.status === 'working' || s.status === 'waiting' || s.status === 'no-claude') {
+    if (s.status === 'working' || s.status === 'waiting' || s.status === 'no-claude' || s.status === 'no-claude-running') {
       action = '<button class="btn btn-focus" onclick="focusSession(\\'' + s.iterm_uuid + '\\')">Focus</button>';
       if (!isTtracker) {
         action += ' <button class="btn btn-park" onclick="parkSession(\\'' + s.iterm_uuid + '\\', \\'' + escapeAttr(s.badge) + '\\', ' + (s.file_size || 0) + ')">Park</button>';
