@@ -1721,13 +1721,15 @@ function getDashboardHTML() {
 <body>
 
 <div class="header">
-  <div style="display:flex;align-items:center;gap:12px">
+  <div>
     <h1>t<span>tracker</span></h1>
-    <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Toggle light/dark">&#9789; Dark</button>
+    <div class="tabs" style="margin:0;border:none">
+      <button class="tab active" onclick="switchTab('sessions')">Sessions</button>
+      <button class="tab" onclick="switchTab('notes')">Notes</button>
+    </div>
   </div>
-  <div class="tabs" style="margin:0;border:none">
-    <button class="tab active" onclick="switchTab('sessions')">Sessions</button>
-    <button class="tab" onclick="switchTab('notes')">Notes</button>
+  <div>
+    <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Toggle light/dark">&#9789; Dark</button>
   </div>
 </div>
 
