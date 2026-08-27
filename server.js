@@ -1297,7 +1297,7 @@ end tell`);
             '--limit', '50'
           ], { timeout: 15000 }, (err, stdout) => resolve(err ? '' : stdout.trim()));
         });
-        results[user] = prData ? JSON.parse(prData) : [];
+        results[user] = prData ? JSON.parse(prData).filter(pr => !pr.isDraft) : [];
       } catch {
         results[user] = [];
       }
