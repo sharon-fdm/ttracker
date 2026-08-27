@@ -1960,6 +1960,17 @@ function getDashboardHTML() {
   </div>
 </div>
 
+<div id="reassign-modal" class="modal-overlay">
+  <div class="modal" style="border-color: var(--green)">
+    <h3 style="color: var(--green)">Reassign PR</h3>
+    <p>Reassign <span class="badge-name" id="reassign-pr"></span> to <span class="badge-name" id="reassign-to"></span>?</p>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeReassignModal()">Cancel</button>
+      <button class="btn btn-focus" id="reassign-confirm">Yes, Reassign</button>
+    </div>
+  </div>
+</div>
+
 <div id="sticky-delete-modal" class="modal-overlay">
   <div class="modal" style="border-color: var(--red)">
     <h3 style="color: var(--red)">Delete Sticky Note</h3>
@@ -2430,6 +2441,7 @@ document.addEventListener('keydown', function(e) {
     closeModal();
     closeParkModal();
     closeStickyDeleteModal();
+    closeReassignModal();
   }
   if (e.key === 'z' && (e.metaKey || e.ctrlKey) && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
     undoDeleteSticky();
@@ -2442,6 +2454,8 @@ document.addEventListener('keydown', function(e) {
     if (pm.classList.contains('active')) { document.getElementById('park-modal-confirm').click(); return; }
     const sm = document.getElementById('sticky-delete-modal');
     if (sm.classList.contains('active')) { document.getElementById('sticky-delete-confirm').click(); return; }
+    const rm = document.getElementById('reassign-modal');
+    if (rm.classList.contains('active')) { document.getElementById('reassign-confirm').click(); return; }
   }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (focusedStickyId && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
@@ -2704,22 +2718,27 @@ function renderPRs(users, prs) {
   }).join('');
 }
 
-async function reassignPR(prNumber, fromUser, toUser) {
-  const btn = event.target;
-  btn.disabled = true;
-  btn.textContent = '...';
-  const res = await fetch(API + '/api/github-reassign', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prNumber, fromUser, toUser })
-  });
-  const data = await res.json();
-  if (data.ok) {
-    await refreshPRs();
-  } else {
-    btn.textContent = 'err';
-    btn.disabled = false;
-  }
+function reassignPR(prNumber, fromUser, toUser) {
+  const modal = document.getElementById('reassign-modal');
+  document.getElementById('reassign-pr').textContent = '#' + prNumber;
+  document.getElementById('reassign-to').textContent = toUser;
+  document.getElementById('reassign-confirm').onclick = async function() {
+    closeReassignModal();
+    const res = await fetch(API + '/api/github-reassign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prNumber, fromUser, toUser })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      await refreshPRs();
+    }
+  };
+  modal.classList.add('active');
+}
+
+function closeReassignModal() {
+  document.getElementById('reassign-modal').classList.remove('active');
 }
 
 // Initial load + auto-refresh
