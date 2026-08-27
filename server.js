@@ -1721,24 +1721,24 @@ function getDashboardHTML() {
 <body>
 
 <div class="header">
-  <div>
+  <div style="display:flex;align-items:center;gap:12px">
     <h1>t<span>tracker</span></h1>
-  </div>
-  <div class="header-info">
-    <span id="snapshot-time"></span>
-    <span id="session-counts"></span>
-    <button class="refresh-btn" onclick="forceSnapshot()">Snapshot Now</button>
-    <button class="refresh-btn" onclick="minimizeAll()">Minimize All</button>
     <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Toggle light/dark">&#9789; Dark</button>
   </div>
-</div>
-
-<div class="tabs">
-  <button class="tab active" onclick="switchTab('sessions')">Sessions</button>
-  <button class="tab" onclick="switchTab('notes')">Notes</button>
+  <div class="tabs" style="margin:0;border:none">
+    <button class="tab active" onclick="switchTab('sessions')">Sessions</button>
+    <button class="tab" onclick="switchTab('notes')">Notes</button>
+  </div>
 </div>
 
 <div id="tab-sessions" class="tab-content active">
+
+<div class="header-info" style="margin-bottom:16px">
+  <span id="snapshot-time"></span>
+  <span id="session-counts"></span>
+  <button class="refresh-btn" onclick="forceSnapshot()">Snapshot Now</button>
+  <button class="refresh-btn" onclick="minimizeAll()">Minimize All</button>
+</div>
 
 <div class="top-panel">
 <div class="top-controls">
