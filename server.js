@@ -1238,6 +1238,76 @@ end tell`);
     return;
   }
 
+  // GET /api/github-users
+  if (req.method === 'GET' && url.pathname === '/api/github-users') {
+    const state = loadState();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(state.githubUsers || []));
+    return;
+  }
+
+  // POST /api/github-users
+  if (req.method === 'POST' && url.pathname === '/api/github-users') {
+    const body = await new Promise((resolve) => {
+      let data = '';
+      req.on('data', c => data += c);
+      req.on('end', () => resolve(data));
+    });
+    const { username } = JSON.parse(body);
+    if (!username) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Username required' }));
+      return;
+    }
+    const state = loadState();
+    if (!state.githubUsers) state.githubUsers = [];
+    if (!state.githubUsers.includes(username)) {
+      state.githubUsers.push(username);
+      saveState(state);
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // DELETE /api/github-users/:username
+  if (req.method === 'DELETE' && pathParts[0] === 'api' && pathParts[1] === 'github-users' && pathParts[2]) {
+    const username = decodeURIComponent(pathParts[2]);
+    const state = loadState();
+    state.githubUsers = (state.githubUsers || []).filter(u => u !== username);
+    saveState(state);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // GET /api/github-prs
+  if (req.method === 'GET' && url.pathname === '/api/github-prs') {
+    const state = loadState();
+    const users = state.githubUsers || [];
+    const results = {};
+
+    for (const user of users) {
+      try {
+        const prData = await new Promise((resolve) => {
+          execFile('gh', [
+            'pr', 'list', '--repo', 'fleetdm/fleet',
+            '--search', `review-requested:${user} is:open`,
+            '--json', 'number,title,url,author,createdAt,isDraft',
+            '--limit', '50'
+          ], { timeout: 15000 }, (err, stdout) => resolve(err ? '' : stdout.trim()));
+        });
+        results[user] = prData ? JSON.parse(prData) : [];
+      } catch {
+        results[user] = [];
+      }
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(results));
+    return;
+  }
+
   // GET /api/stickies
   if (req.method === 'GET' && url.pathname === '/api/stickies') {
     const state = loadState();
@@ -1726,6 +1796,7 @@ function getDashboardHTML() {
     <div class="tabs" style="margin:0;border:none">
       <button class="tab active" onclick="switchTab('sessions')">Sessions</button>
       <button class="tab" onclick="switchTab('notes')">Notes</button>
+      <button class="tab" onclick="switchTab('prs')">PR Assignees</button>
     </div>
   </div>
   <div>
@@ -1826,6 +1897,16 @@ function getDashboardHTML() {
 
 <div id="tab-notes" class="tab-content">
   <div id="sticky-board" class="sticky-board" style="min-height:400px" onclick="onBoardClick(event)"></div>
+</div>
+
+<div id="tab-prs" class="tab-content">
+  <div class="new-session" style="margin-bottom:16px">
+    <input id="gh-user-input" type="text" placeholder="GitHub username" style="width:200px" onkeydown="if(event.key==='Enter')addGhUser()" />
+    <button class="btn-new" onclick="addGhUser()">Add User</button>
+    <button class="refresh-btn" onclick="refreshPRs()" id="pr-refresh-btn">Refresh PRs</button>
+    <span id="pr-status" style="color:var(--fg-muted);font-size:12px;margin-left:8px"></span>
+  </div>
+  <div id="pr-sections"></div>
 </div>
 
 <div id="delete-modal" class="modal-overlay">
@@ -2512,10 +2593,89 @@ async function loadStickies() {
   } catch {}
 }
 
+// ─── PR Assignees ────────────────────────────────────────────────
+async function addGhUser() {
+  const input = document.getElementById('gh-user-input');
+  const username = input.value.trim();
+  if (!username) return;
+  await fetch(API + '/api/github-users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username })
+  });
+  input.value = '';
+  await refreshPRs();
+}
+
+async function removeGhUser(username) {
+  await fetch(API + '/api/github-users/' + encodeURIComponent(username), { method: 'DELETE' });
+  await refreshPRs();
+}
+
+async function refreshPRs() {
+  const btn = document.getElementById('pr-refresh-btn');
+  const status = document.getElementById('pr-status');
+  btn.disabled = true;
+  btn.textContent = 'Loading...';
+  status.textContent = '';
+
+  try {
+    const [usersRes, prsRes] = await Promise.all([
+      fetch(API + '/api/github-users'),
+      fetch(API + '/api/github-prs')
+    ]);
+    const users = await usersRes.json();
+    const prs = await prsRes.json();
+    renderPRs(users, prs);
+    const total = Object.values(prs).reduce((sum, arr) => sum + arr.length, 0);
+    status.textContent = total + ' PR(s) across ' + users.length + ' user(s)';
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+
+  btn.textContent = 'Refresh PRs';
+  btn.disabled = false;
+}
+
+function renderPRs(users, prs) {
+  const container = document.getElementById('pr-sections');
+  if (users.length === 0) {
+    container.innerHTML = '<p class="empty-state">Add GitHub usernames to track their PR review assignments.</p>';
+    return;
+  }
+
+  container.innerHTML = users.map(user => {
+    const userPrs = prs[user] || [];
+    const rows = userPrs.length === 0
+      ? '<tr><td colspan="4" class="empty-state">No PRs assigned for review</td></tr>'
+      : userPrs.map(pr => {
+        const age = Math.floor((Date.now() - new Date(pr.createdAt).getTime()) / 86400000);
+        const ageColor = age > 7 ? 'var(--red)' : age > 3 ? 'var(--orange)' : 'var(--fg)';
+        return '<tr>'
+          + '<td><a href="' + escapeHtml(pr.url) + '" target="_blank" style="color:var(--blue);text-decoration:none">#' + pr.number + '</a></td>'
+          + '<td>' + escapeHtml(pr.title) + (pr.isDraft ? ' <span style="color:var(--fg-muted);font-size:10px">[draft]</span>' : '') + '</td>'
+          + '<td>' + escapeHtml(pr.author.login) + '</td>'
+          + '<td style="color:' + ageColor + '">' + age + 'd ago</td>'
+          + '</tr>';
+      }).join('');
+
+    return '<div style="margin-bottom:24px">'
+      + '<h2 style="color:var(--blue);border-left:3px solid var(--blue);padding-left:8px;display:flex;align-items:center;gap:8px">'
+      + '<a href="https://github.com/fleetdm/fleet/pulls/assigned/' + escapeHtml(user) + '" target="_blank" style="color:var(--blue);text-decoration:none">' + escapeHtml(user) + '</a>'
+      + ' <span class="count">(' + userPrs.length + ')</span>'
+      + ' <button class="btn btn-delete" style="font-size:10px;padding:2px 6px" onclick="removeGhUser(\\'' + escapeAttr(user) + '\\')">x</button>'
+      + '</h2>'
+      + '<table><thead><tr><th style="width:80px">PR</th><th>Title</th><th style="width:120px">Author</th><th style="width:80px">Age</th></tr></thead>'
+      + '<tbody>' + rows + '</tbody></table>'
+      + '</div>';
+  }).join('');
+}
+
 // Initial load + auto-refresh
 refresh();
 loadProjects();
 loadStickies();
+refreshPRs();
 refreshTimer = setInterval(refresh, 5000);
 </script>
 
