@@ -1543,6 +1543,31 @@ function getDashboardHTML() {
     line-height: 1;
   }
   .theme-toggle:hover { border-color: var(--blue); }
+  .tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 0;
+    border-bottom: 2px solid var(--bg-alt);
+  }
+  .tab {
+    padding: 8px 20px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg-muted);
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+  }
+  .tab:hover { color: var(--fg); }
+  .tab.active {
+    color: var(--blue);
+    border-bottom-color: var(--blue);
+  }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
   .top-panel {
     display: flex;
     gap: 16px;
@@ -1704,12 +1729,16 @@ function getDashboardHTML() {
     <span id="session-counts"></span>
     <button class="refresh-btn" onclick="forceSnapshot()">Snapshot Now</button>
     <button class="refresh-btn" onclick="minimizeAll()">Minimize All</button>
-    <button class="refresh-btn" onclick="toggleStickies()" id="sticky-toggle">Show Notes</button>
     <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="Toggle light/dark">&#9789; Dark</button>
   </div>
 </div>
 
-<div id="sticky-board" class="sticky-board" style="display:none" onclick="onBoardClick(event)"></div>
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('sessions')">Sessions</button>
+  <button class="tab" onclick="switchTab('notes')">Notes</button>
+</div>
+
+<div id="tab-sessions" class="tab-content active">
 
 <div class="top-panel">
 <div class="top-controls">
@@ -1790,6 +1819,12 @@ function getDashboardHTML() {
   </thead>
   <tbody id="history-body"></tbody>
 </table>
+
+</div>
+
+<div id="tab-notes" class="tab-content">
+  <div id="sticky-board" class="sticky-board" style="min-height:400px" onclick="onBoardClick(event)"></div>
+</div>
 
 <div id="delete-modal" class="modal-overlay">
   <div class="modal">
@@ -2233,19 +2268,17 @@ if (localStorage.getItem('tt-theme') === 'dark') {
   document.getElementById('theme-btn').innerHTML = '&#9788; Light';
 }
 
-function toggleStickies() {
-  const board = document.getElementById('sticky-board');
-  const btn = document.getElementById('sticky-toggle');
-  const visible = board.style.display !== 'none';
-  board.style.display = visible ? 'none' : '';
-  btn.textContent = visible ? 'Show Notes' : 'Hide Notes';
-  localStorage.setItem('tt-stickies-visible', visible ? '0' : '1');
+function switchTab(tabName) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + tabName).classList.add('active');
+  document.querySelector('.tab[onclick*="' + tabName + '"]').classList.add('active');
+  localStorage.setItem('tt-active-tab', tabName);
 }
 
-// Restore sticky visibility and height
-if (localStorage.getItem('tt-stickies-visible') === '1') {
-  document.getElementById('sticky-board').style.display = '';
-  document.getElementById('sticky-toggle').textContent = 'Hide Notes';
+// Restore saved tab
+if (localStorage.getItem('tt-active-tab')) {
+  switchTab(localStorage.getItem('tt-active-tab'));
 }
 
 // Restore saved board height
