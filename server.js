@@ -1308,6 +1308,31 @@ end tell`);
     return;
   }
 
+  // POST /api/github-reassign
+  if (req.method === 'POST' && url.pathname === '/api/github-reassign') {
+    const body = await new Promise((resolve) => {
+      let data = '';
+      req.on('data', c => data += c);
+      req.on('end', () => resolve(data));
+    });
+    const { prNumber, fromUser, toUser } = JSON.parse(body);
+    try {
+      await new Promise((resolve, reject) => {
+        execFile('gh', [
+          'pr', 'edit', String(prNumber), '--repo', 'fleetdm/fleet',
+          '--add-assignee', toUser, '--remove-assignee', fromUser
+        ], { timeout: 15000 }, (err) => err ? reject(err) : resolve());
+      });
+      console.log(`[pr] Reassigned #${prNumber}: ${fromUser} -> ${toUser}`);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return;
+  }
+
   // GET /api/stickies
   if (req.method === 'GET' && url.pathname === '/api/stickies') {
     const state = loadState();
@@ -2646,16 +2671,21 @@ function renderPRs(users, prs) {
 
   container.innerHTML = users.map(user => {
     const userPrs = prs[user] || [];
+    const otherUsers = users.filter(u => u !== user);
     const rows = userPrs.length === 0
-      ? '<tr><td colspan="4" class="empty-state">No PRs assigned for review</td></tr>'
+      ? '<tr><td colspan="5" class="empty-state">No PRs assigned</td></tr>'
       : userPrs.map(pr => {
         const age = Math.floor((Date.now() - new Date(pr.createdAt).getTime()) / 86400000);
         const ageColor = age > 7 ? 'var(--red)' : age > 3 ? 'var(--orange)' : 'var(--fg)';
+        const reassignBtns = otherUsers.map(other =>
+          '<button class="btn btn-focus" style="font-size:10px;padding:2px 8px;margin:1px" onclick="reassignPR(' + pr.number + ', \\'' + escapeAttr(user) + '\\', \\'' + escapeAttr(other) + '\\')">' + escapeHtml(other) + '</button>'
+        ).join(' ');
         return '<tr>'
           + '<td><a href="' + escapeHtml(pr.url) + '" target="_blank" style="color:var(--blue);text-decoration:none">#' + pr.number + '</a></td>'
           + '<td>' + escapeHtml(pr.title) + (pr.isDraft ? ' <span style="color:var(--fg-muted);font-size:10px">[draft]</span>' : '') + '</td>'
           + '<td>' + escapeHtml(pr.author.login) + '</td>'
           + '<td style="color:' + ageColor + '">' + age + 'd ago</td>'
+          + '<td class="actions">' + reassignBtns + '</td>'
           + '</tr>';
       }).join('');
 
@@ -2665,10 +2695,28 @@ function renderPRs(users, prs) {
       + ' <span class="count">(' + userPrs.length + ')</span>'
       + ' <button class="btn btn-delete" style="font-size:10px;padding:2px 6px" onclick="removeGhUser(\\'' + escapeAttr(user) + '\\')">x</button>'
       + '</h2>'
-      + '<table><thead><tr><th style="width:80px">PR</th><th>Title</th><th style="width:120px">Author</th><th style="width:80px">Age</th></tr></thead>'
+      + '<table><thead><tr><th style="width:80px">PR</th><th>Title</th><th style="width:120px">Author</th><th style="width:80px">Age</th><th>Reassign</th></tr></thead>'
       + '<tbody>' + rows + '</tbody></table>'
       + '</div>';
   }).join('');
+}
+
+async function reassignPR(prNumber, fromUser, toUser) {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '...';
+  const res = await fetch(API + '/api/github-reassign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prNumber, fromUser, toUser })
+  });
+  const data = await res.json();
+  if (data.ok) {
+    await refreshPRs();
+  } else {
+    btn.textContent = 'err';
+    btn.disabled = false;
+  }
 }
 
 // Initial load + auto-refresh
