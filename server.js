@@ -2669,7 +2669,10 @@ function renderPRs(users, prs) {
     return;
   }
 
-  container.innerHTML = users.map(user => {
+  // Sort users by PR count descending
+  const sortedUsers = [...users].sort((a, b) => (prs[b] || []).length - (prs[a] || []).length);
+
+  container.innerHTML = sortedUsers.map(user => {
     const userPrs = prs[user] || [];
     const otherUsers = users.filter(u => u !== user);
     const rows = userPrs.length === 0
