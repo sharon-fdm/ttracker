@@ -1292,7 +1292,7 @@ end tell`);
         const prData = await new Promise((resolve) => {
           execFile('gh', [
             'pr', 'list', '--repo', 'fleetdm/fleet',
-            '--search', `review-requested:${user} is:open`,
+            '--assignee', user, '--state', 'open',
             '--json', 'number,title,url,author,createdAt,isDraft',
             '--limit', '50'
           ], { timeout: 15000 }, (err, stdout) => resolve(err ? '' : stdout.trim()));
