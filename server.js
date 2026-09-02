@@ -1401,7 +1401,7 @@ end tell`);
               .filter(i => {
                 // Filter out issues in "In review" or "Awaiting QA" columns
                 const statuses = (i.projectItems || []).map(p => (p.status || {}).name || '');
-                return !statuses.some(s => s.includes('In review') || s.includes('Awaiting QA'));
+                return !statuses.some(s => s.includes('In review') || s.includes('Awaiting QA') || s.includes('Ready for release') || s.includes('Done'));
               })
               .map(i => {
                 const statuses = (i.projectItems || []).map(p => (p.status || {}).name || '').filter(Boolean);
