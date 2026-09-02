@@ -1333,6 +1333,84 @@ end tell`);
     return;
   }
 
+  // GET /api/px-teams
+  if (req.method === 'GET' && url.pathname === '/api/px-teams') {
+    const state = loadState();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(state.pxTeams || []));
+    return;
+  }
+
+  // POST /api/px-teams
+  if (req.method === 'POST' && url.pathname === '/api/px-teams') {
+    const body = await new Promise((resolve) => {
+      let data = '';
+      req.on('data', c => data += c);
+      req.on('end', () => resolve(data));
+    });
+    const { team } = JSON.parse(body);
+    if (!team) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Team label required' }));
+      return;
+    }
+    const state = loadState();
+    if (!state.pxTeams) state.pxTeams = [];
+    if (!state.pxTeams.includes(team)) {
+      state.pxTeams.push(team);
+      saveState(state);
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // DELETE /api/px-teams/:team
+  if (req.method === 'DELETE' && pathParts[0] === 'api' && pathParts[1] === 'px-teams' && pathParts[2]) {
+    const team = decodeURIComponent(pathParts[2]);
+    const state = loadState();
+    state.pxTeams = (state.pxTeams || []).filter(t => t !== team);
+    saveState(state);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // GET /api/px-issues
+  if (req.method === 'GET' && url.pathname === '/api/px-issues') {
+    const state = loadState();
+    const teams = state.pxTeams || [];
+    const results = {};
+    const priorities = ['P0', 'P1', 'P2'];
+
+    for (const team of teams) {
+      results[team] = [];
+      for (const priority of priorities) {
+        try {
+          const data = await new Promise((resolve) => {
+            execFile('gh', [
+              'issue', 'list', '--repo', 'fleetdm/fleet',
+              '--label', team, '--label', priority,
+              '--state', 'open',
+              '--json', 'number,title,url,labels,assignees,createdAt',
+              '--limit', '50'
+            ], { timeout: 15000 }, (err, stdout) => resolve(err ? '' : stdout.trim()));
+          });
+          if (data) {
+            const issues = JSON.parse(data).map(i => ({ ...i, priority }));
+            results[team].push(...issues);
+          }
+        } catch {}
+      }
+      // Sort: P0 first, then P1, then P2
+      results[team].sort((a, b) => a.priority.localeCompare(b.priority));
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(results));
+    return;
+  }
+
   // GET /api/stickies
   if (req.method === 'GET' && url.pathname === '/api/stickies') {
     const state = loadState();
@@ -1822,6 +1900,7 @@ function getDashboardHTML() {
       <button class="tab active" onclick="switchTab('sessions')">Sessions</button>
       <button class="tab" onclick="switchTab('notes')">Notes</button>
       <button class="tab" onclick="switchTab('prs')">PR Assignees</button>
+      <button class="tab" onclick="switchTab('px')">PX Teams</button>
     </div>
   </div>
   <div>
@@ -1932,6 +2011,16 @@ function getDashboardHTML() {
     <span id="pr-status" style="color:var(--fg-muted);font-size:12px;margin-left:8px"></span>
   </div>
   <div id="pr-sections"></div>
+</div>
+
+<div id="tab-px" class="tab-content">
+  <div class="new-session" style="margin-bottom:16px">
+    <input id="px-team-input" type="text" placeholder="Team label (e.g. #g-orchestration)" style="width:280px" onkeydown="if(event.key==='Enter')addPxTeam()" />
+    <button class="btn-new" onclick="addPxTeam()">Add Team</button>
+    <button class="refresh-btn" onclick="refreshPX()" id="px-refresh-btn">Refresh</button>
+    <span id="px-status" style="color:var(--fg-muted);font-size:12px;margin-left:8px"></span>
+  </div>
+  <div id="px-sections"></div>
 </div>
 
 <div id="delete-modal" class="modal-overlay">
@@ -2741,11 +2830,106 @@ function closeReassignModal() {
   document.getElementById('reassign-modal').classList.remove('active');
 }
 
+// ─── PX Teams ────────────────────────────────────────────────────
+async function addPxTeam() {
+  const input = document.getElementById('px-team-input');
+  const team = input.value.trim();
+  if (!team) return;
+  await fetch(API + '/api/px-teams', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ team })
+  });
+  input.value = '';
+  await refreshPX();
+}
+
+async function removePxTeam(team) {
+  await fetch(API + '/api/px-teams/' + encodeURIComponent(team), { method: 'DELETE' });
+  await refreshPX();
+}
+
+async function refreshPX() {
+  const btn = document.getElementById('px-refresh-btn');
+  const status = document.getElementById('px-status');
+  btn.disabled = true;
+  btn.textContent = 'Loading...';
+  status.textContent = '';
+
+  try {
+    const [teamsRes, issuesRes] = await Promise.all([
+      fetch(API + '/api/px-teams'),
+      fetch(API + '/api/px-issues')
+    ]);
+    const teams = await teamsRes.json();
+    const issues = await issuesRes.json();
+    renderPX(teams, issues);
+    const total = Object.values(issues).reduce((sum, arr) => sum + arr.length, 0);
+    status.textContent = total + ' issue(s) across ' + teams.length + ' team(s)';
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+
+  btn.textContent = 'Refresh';
+  btn.disabled = false;
+}
+
+function renderPX(teams, issues) {
+  const container = document.getElementById('px-sections');
+  if (teams.length === 0) {
+    container.innerHTML = '<p class="empty-state">Add team labels to track their P0/P1/P2 issues.</p>';
+    return;
+  }
+
+  // Sort teams by issue count descending
+  const sortedTeams = [...teams].sort((a, b) => (issues[b] || []).length - (issues[a] || []).length);
+
+  const priorityColor = { P0: 'var(--red)', P1: 'var(--orange)', P2: 'var(--yellow)' };
+
+  container.innerHTML = sortedTeams.map(team => {
+    const teamIssues = issues[team] || [];
+    const rows = teamIssues.length === 0
+      ? '<tr><td colspan="5" class="empty-state">No P0/P1/P2 issues</td></tr>'
+      : teamIssues.map(issue => {
+        const age = Math.floor((Date.now() - new Date(issue.createdAt).getTime()) / 86400000);
+        const ageColor = age > 30 ? 'var(--red)' : age > 14 ? 'var(--orange)' : 'var(--fg)';
+        const assignees = (issue.assignees || []).map(a => a.login).join(', ') || 'unassigned';
+        return '<tr>'
+          + '<td><span style="color:' + (priorityColor[issue.priority] || 'var(--fg)') + ';font-weight:700">' + issue.priority + '</span></td>'
+          + '<td><a href="' + escapeHtml(issue.url) + '" target="_blank" style="color:var(--blue);text-decoration:none">#' + issue.number + '</a></td>'
+          + '<td>' + escapeHtml(issue.title) + '</td>'
+          + '<td>' + escapeHtml(assignees) + '</td>'
+          + '<td style="color:' + ageColor + '">' + age + 'd</td>'
+          + '</tr>';
+      }).join('');
+
+    // Count by priority
+    const p0 = teamIssues.filter(i => i.priority === 'P0').length;
+    const p1 = teamIssues.filter(i => i.priority === 'P1').length;
+    const p2 = teamIssues.filter(i => i.priority === 'P2').length;
+    const summary = (p0 ? '<span style="color:var(--red)">' + p0 + ' P0</span> ' : '')
+      + (p1 ? '<span style="color:var(--orange)">' + p1 + ' P1</span> ' : '')
+      + (p2 ? '<span style="color:var(--yellow)">' + p2 + ' P2</span>' : '');
+
+    return '<div style="margin-bottom:24px">'
+      + '<h2 style="color:var(--blue);border-left:3px solid var(--blue);padding-left:8px;display:flex;align-items:center;gap:8px">'
+      + escapeHtml(team)
+      + ' <span class="count">(' + teamIssues.length + ')</span>'
+      + ' <span style="font-size:12px;font-weight:400">' + summary + '</span>'
+      + ' <button class="btn btn-delete" style="font-size:10px;padding:2px 6px" onclick="removePxTeam(\\'' + escapeAttr(team) + '\\')">x</button>'
+      + '</h2>'
+      + '<table><thead><tr><th style="width:50px">P</th><th style="width:80px">#</th><th>Title</th><th style="width:150px">Assignee</th><th style="width:60px">Age</th></tr></thead>'
+      + '<tbody>' + rows + '</tbody></table>'
+      + '</div>';
+  }).join('');
+}
+
 // Initial load + auto-refresh
 refresh();
 loadProjects();
 loadStickies();
 refreshPRs();
+refreshPX();
 refreshTimer = setInterval(refresh, 5000);
 </script>
 
