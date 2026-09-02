@@ -2922,7 +2922,7 @@ function renderPX(teams, issues) {
 
     return '<div style="margin-bottom:24px">'
       + '<h2 style="color:var(--blue);border-left:3px solid var(--blue);padding-left:8px;display:flex;align-items:center;gap:8px">'
-      + escapeHtml(team)
+      + '<a href="https://github.com/fleetdm/fleet/issues?q=is%3Aopen+label%3A' + encodeURIComponent(team) + '+label%3AP0%2CP1%2CP2" target="_blank" style="color:var(--blue);text-decoration:none">' + escapeHtml(team) + '</a>'
       + ' <span class="count">(' + teamIssues.length + ')</span>'
       + ' <span style="font-size:12px;font-weight:400">' + summary + '</span>'
       + ' <button class="btn btn-delete" style="font-size:10px;padding:2px 6px" onclick="removePxTeam(\\'' + escapeAttr(team) + '\\')">x</button>'
