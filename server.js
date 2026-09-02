@@ -1392,12 +1392,21 @@ end tell`);
               'issue', 'list', '--repo', 'fleetdm/fleet',
               '--label', team, '--label', priority,
               '--state', 'open',
-              '--json', 'number,title,url,labels,assignees,createdAt',
+              '--json', 'number,title,url,labels,assignees,createdAt,projectItems',
               '--limit', '50'
             ], { timeout: 15000 }, (err, stdout) => resolve(err ? '' : stdout.trim()));
           });
           if (data) {
-            const issues = JSON.parse(data).map(i => ({ ...i, priority }));
+            const issues = JSON.parse(data)
+              .filter(i => {
+                // Filter out issues in "In review" or "Awaiting QA" columns
+                const statuses = (i.projectItems || []).map(p => (p.status || {}).name || '');
+                return !statuses.some(s => s.includes('In review') || s.includes('Awaiting QA'));
+              })
+              .map(i => {
+                const statuses = (i.projectItems || []).map(p => (p.status || {}).name || '').filter(Boolean);
+                return { ...i, priority, boardStatus: statuses[0] || '' };
+              });
             results[team].push(...issues);
           }
         } catch {}
