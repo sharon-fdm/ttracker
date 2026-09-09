@@ -1293,7 +1293,7 @@ end tell`);
           execFile('gh', [
             'pr', 'list', '--repo', 'fleetdm/fleet',
             '--assignee', user, '--state', 'open',
-            '--json', 'number,title,url,author,createdAt,isDraft,reviewDecision,reviews',
+            '--json', 'number,title,url,author,createdAt,isDraft,reviewDecision,reviews,additions,deletions,files',
             '--limit', '50'
           ], { timeout: 15000 }, (err, stdout) => resolve(err ? '' : stdout.trim()));
         });
@@ -1305,8 +1305,18 @@ end tell`);
           let reviewStatus = 'pending';
           if (userApproved) reviewStatus = 'approved';
           else if (userCommented) reviewStatus = 'commented';
-          delete pr.reviews; // don't send full review data to client
-          return { ...pr, reviewStatus };
+          // Compute line counts: total, test, prod
+          const testPatterns = ['_test.', '.test.', '/test/', '__tests__', 'test_', '/tests/'];
+          const files = pr.files || [];
+          const testLines = files.reduce((sum, f) => {
+            const isTest = testPatterns.some(p => (f.path || '').includes(p));
+            return isTest ? sum + (f.additions || 0) + (f.deletions || 0) : sum;
+          }, 0);
+          const totalLines = (pr.additions || 0) + (pr.deletions || 0);
+          const prodLines = totalLines - testLines;
+          delete pr.reviews;
+          delete pr.files;
+          return { ...pr, reviewStatus, totalLines, prodLines, testLines };
         }) : [];
       } catch {
         results[user] = [];
@@ -2798,7 +2808,7 @@ function renderPRs(users, prs) {
     const userPrs = prs[user] || [];
     const otherUsers = users.filter(u => u !== user);
     const rows = userPrs.length === 0
-      ? '<tr><td colspan="6" class="empty-state">No PRs assigned</td></tr>'
+      ? '<tr><td colspan="7" class="empty-state">No PRs assigned</td></tr>'
       : userPrs.map(pr => {
         const age = Math.floor((Date.now() - new Date(pr.createdAt).getTime()) / 86400000);
         const ageColor = age > 7 ? 'var(--red)' : age > 3 ? 'var(--orange)' : 'var(--fg)';
@@ -2810,6 +2820,7 @@ function renderPRs(users, prs) {
           + '<td>' + escapeHtml(pr.title) + (pr.isDraft ? ' <span style="color:var(--fg-muted);font-size:10px">[draft]</span>' : '') + '</td>'
           + '<td>' + escapeHtml(pr.author.login) + '</td>'
           + '<td style="font-size:11px;font-weight:600;color:' + (pr.reviewStatus === 'approved' ? 'var(--green)' : pr.reviewStatus === 'commented' ? 'var(--cyan)' : 'var(--fg-muted)') + '">' + (pr.reviewStatus === 'approved' ? '&#10003; approved' : pr.reviewStatus === 'commented' ? '&#9998; commented' : '&#9679; pending') + '</td>'
+          + '<td style="font-size:11px"><span style="font-weight:600">' + pr.totalLines + '</span> <span style="color:var(--fg-muted)">(' + pr.prodLines + ' prod, ' + pr.testLines + ' test)</span></td>'
           + '<td style="color:' + ageColor + '">' + age + 'd ago</td>'
           + '<td class="actions">' + reassignBtns + '</td>'
           + '</tr>';
@@ -2821,7 +2832,7 @@ function renderPRs(users, prs) {
       + ' <span class="count">(' + userPrs.length + ')</span>'
       + ' <button class="btn btn-delete" style="font-size:10px;padding:2px 6px" onclick="removeGhUser(\\'' + escapeAttr(user) + '\\')">x</button>'
       + '</h2>'
-      + '<table><thead><tr><th style="width:80px">PR</th><th>Title</th><th style="width:120px">Author</th><th style="width:80px">Status</th><th style="width:80px">Age</th><th>Reassign</th></tr></thead>'
+      + '<table><thead><tr><th style="width:80px">PR</th><th>Title</th><th style="width:120px">Author</th><th style="width:80px">Status</th><th style="width:120px">Lines</th><th style="width:80px">Age</th><th>Reassign</th></tr></thead>'
       + '<tbody>' + rows + '</tbody></table>'
       + '</div>';
   }).join('');
