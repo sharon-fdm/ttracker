@@ -1293,11 +1293,21 @@ end tell`);
           execFile('gh', [
             'pr', 'list', '--repo', 'fleetdm/fleet',
             '--assignee', user, '--state', 'open',
-            '--json', 'number,title,url,author,createdAt,isDraft',
+            '--json', 'number,title,url,author,createdAt,isDraft,reviewDecision,reviews',
             '--limit', '50'
           ], { timeout: 15000 }, (err, stdout) => resolve(err ? '' : stdout.trim()));
         });
-        results[user] = prData ? JSON.parse(prData).filter(pr => !pr.isDraft) : [];
+        const botNames = new Set(['coderabbitai','copilot-pull-request-reviewer','qodo-free-for-open-source-projects']);
+        results[user] = prData ? JSON.parse(prData).filter(pr => !pr.isDraft).map(pr => {
+          const userReviews = (pr.reviews || []).filter(r => r.author && r.author.login === user);
+          const userApproved = userReviews.some(r => r.state === 'APPROVED');
+          const userCommented = userReviews.some(r => r.state === 'COMMENTED');
+          let reviewStatus = 'pending';
+          if (userApproved) reviewStatus = 'approved';
+          else if (userCommented) reviewStatus = 'commented';
+          delete pr.reviews; // don't send full review data to client
+          return { ...pr, reviewStatus };
+        }) : [];
       } catch {
         results[user] = [];
       }
@@ -2788,7 +2798,7 @@ function renderPRs(users, prs) {
     const userPrs = prs[user] || [];
     const otherUsers = users.filter(u => u !== user);
     const rows = userPrs.length === 0
-      ? '<tr><td colspan="5" class="empty-state">No PRs assigned</td></tr>'
+      ? '<tr><td colspan="6" class="empty-state">No PRs assigned</td></tr>'
       : userPrs.map(pr => {
         const age = Math.floor((Date.now() - new Date(pr.createdAt).getTime()) / 86400000);
         const ageColor = age > 7 ? 'var(--red)' : age > 3 ? 'var(--orange)' : 'var(--fg)';
@@ -2799,6 +2809,7 @@ function renderPRs(users, prs) {
           + '<td><a href="' + escapeHtml(pr.url) + '" target="_blank" style="color:var(--blue);text-decoration:none">#' + pr.number + '</a></td>'
           + '<td>' + escapeHtml(pr.title) + (pr.isDraft ? ' <span style="color:var(--fg-muted);font-size:10px">[draft]</span>' : '') + '</td>'
           + '<td>' + escapeHtml(pr.author.login) + '</td>'
+          + '<td style="font-size:11px;font-weight:600;color:' + (pr.reviewStatus === 'approved' ? 'var(--green)' : pr.reviewStatus === 'commented' ? 'var(--cyan)' : 'var(--fg-muted)') + '">' + (pr.reviewStatus === 'approved' ? '&#10003; approved' : pr.reviewStatus === 'commented' ? '&#9998; commented' : '&#9679; pending') + '</td>'
           + '<td style="color:' + ageColor + '">' + age + 'd ago</td>'
           + '<td class="actions">' + reassignBtns + '</td>'
           + '</tr>';
@@ -2810,7 +2821,7 @@ function renderPRs(users, prs) {
       + ' <span class="count">(' + userPrs.length + ')</span>'
       + ' <button class="btn btn-delete" style="font-size:10px;padding:2px 6px" onclick="removeGhUser(\\'' + escapeAttr(user) + '\\')">x</button>'
       + '</h2>'
-      + '<table><thead><tr><th style="width:80px">PR</th><th>Title</th><th style="width:120px">Author</th><th style="width:80px">Age</th><th>Reassign</th></tr></thead>'
+      + '<table><thead><tr><th style="width:80px">PR</th><th>Title</th><th style="width:120px">Author</th><th style="width:80px">Status</th><th style="width:80px">Age</th><th>Reassign</th></tr></thead>'
       + '<tbody>' + rows + '</tbody></table>'
       + '</div>';
   }).join('');
