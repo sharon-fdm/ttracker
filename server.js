@@ -1323,6 +1323,49 @@ end tell`);
       }
     }
 
+    // Batch fetch file review progress via GraphQL
+    const allPrNumbers = [];
+    for (const user of users) {
+      for (const pr of results[user]) allPrNumbers.push(pr.number);
+    }
+    if (allPrNumbers.length > 0) {
+      try {
+        // Build batch GraphQL query (max ~30 PRs per query)
+        const prQueries = allPrNumbers.slice(0, 30).map((num, i) =>
+          `pr${i}: pullRequest(number: ${num}) { number files(first: 100) { nodes { additions deletions viewerViewedState } } }`
+        ).join('\n');
+        const gqlResult = await new Promise((resolve) => {
+          execFile('gh', ['api', 'graphql', '-f', `query={ repository(owner: "fleetdm", name: "fleet") { ${prQueries} } }`],
+            { timeout: 20000 }, (err, stdout) => resolve(err ? '' : stdout.trim()));
+        });
+        if (gqlResult) {
+          const gqlData = JSON.parse(gqlResult).data.repository;
+          const reviewProgress = {};
+          for (const key of Object.keys(gqlData)) {
+            const pr = gqlData[key];
+            const files = pr.files.nodes;
+            const viewedFiles = files.filter(f => f.viewerViewedState === 'VIEWED');
+            const viewedLines = viewedFiles.reduce((s, f) => s + f.additions + f.deletions, 0);
+            const totalFileLines = files.reduce((s, f) => s + f.additions + f.deletions, 0);
+            reviewProgress[pr.number] = {
+              filesViewed: viewedFiles.length,
+              filesTotal: files.length,
+              linesViewed: viewedLines,
+              linesTotal: totalFileLines
+            };
+          }
+          // Attach to PR results
+          for (const user of users) {
+            for (const pr of results[user]) {
+              if (reviewProgress[pr.number]) {
+                pr.reviewProgress = reviewProgress[pr.number];
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(results));
     return;
@@ -2819,7 +2862,18 @@ function renderPRs(users, prs) {
           + '<td><a href="' + escapeHtml(pr.url) + '" target="_blank" style="color:var(--blue);text-decoration:none">#' + pr.number + '</a></td>'
           + '<td>' + escapeHtml(pr.title) + (pr.isDraft ? ' <span style="color:var(--fg-muted);font-size:10px">[draft]</span>' : '') + '</td>'
           + '<td>' + escapeHtml(pr.author.login) + '</td>'
-          + '<td style="font-size:11px;font-weight:600;color:' + (pr.reviewStatus === 'approved' ? 'var(--green)' : pr.reviewStatus === 'commented' ? 'var(--cyan)' : 'var(--fg-muted)') + '">' + (pr.reviewStatus === 'approved' ? '&#10003; approved' : pr.reviewStatus === 'commented' ? '&#9998; commented' : '&#9679; pending') + '</td>'
+          + '<td style="font-size:11px">' + (function() {
+            var s = pr.reviewStatus;
+            var base = s === 'approved' ? '<span style="color:var(--green);font-weight:600">&#10003; approved</span>'
+              : s === 'commented' ? '<span style="color:var(--cyan);font-weight:600">&#9998; commented</span>'
+              : '<span style="color:var(--fg-muted);font-weight:600">&#9679; pending</span>';
+            var rp = pr.reviewProgress;
+            if (rp && rp.filesViewed > 0) {
+              var pct = Math.round(rp.linesViewed / (rp.linesTotal || 1) * 100);
+              base += '<br><span style="color:var(--violet);font-size:10px">' + rp.filesViewed + '/' + rp.filesTotal + ' files (' + pct + '% lines)</span>';
+            }
+            return base;
+          })() + '</td>'
           + '<td style="font-size:11px"><span style="font-weight:600">' + pr.totalLines + '</span> <span style="color:var(--fg-muted)">(' + pr.prodLines + ' prod, ' + pr.testLines + ' test)</span></td>'
           + '<td style="color:' + ageColor + '">' + age + 'd ago</td>'
           + '<td class="actions">' + reassignBtns + '</td>'
