@@ -1425,19 +1425,33 @@ end tell`);
       .filter(s => s.server || s.fleetd)
       .sort((a, b) => a.due.localeCompare(b.due));
 
-    // The development sprint for a milestone ends on the PREVIOUS milestone's due date.
-    // So: sprint ending today (due date of N) is developing N+1.
-    // Find the first sprint whose due >= today, that's the current release sprint.
-    // The development being done NOW is for the NEXT milestone.
+    // Sprint cadence: 3 weeks (21 days). The milestone due date is the RELEASE date
+    // (around 2 weeks into the next sprint), not the sprint end date.
+    // Sprint end dates are Fridays, 21 days apart.
+    // Find the current sprint end: the first milestone due date >= today
     const currentIdx = allSprints.findIndex(s => s.due >= today);
-    // Start from currentIdx+1 (what's being developed), show 5 sprints
-    // Each sprint block: development ends on previous due date, shows next milestone
+    if (currentIdx < 0) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ sprints: [] })); return; }
+
+    // The current sprint end is the due date of the current milestone
+    const firstSprintEnd = new Date(allSprints[currentIdx].due);
+
     const sprints = [];
-    for (let i = currentIdx + 1; i < Math.min(currentIdx + 6, allSprints.length); i++) {
+    for (let i = 0; i < 7; i++) {
+      const sprintEnd = new Date(firstSprintEnd);
+      sprintEnd.setDate(sprintEnd.getDate() + (i * 21));
+
+      // What's being DEVELOPED this sprint = milestone at currentIdx + 1 + i
+      const devIdx = currentIdx + 1 + i;
+      // What was RELEASED during this sprint (from previous sprint's dev) = milestone at currentIdx + i
+      const relIdx = currentIdx + i;
+
       sprints.push({
-        due: allSprints[i - 1].due, // sprint ends on previous milestone's due date
-        server: allSprints[i].server,
-        fleetd: allSprints[i].fleetd
+        sprintEnd: sprintEnd.toISOString().slice(0, 10),
+        server: devIdx < allSprints.length ? allSprints[devIdx].server : null,
+        fleetd: devIdx < allSprints.length ? allSprints[devIdx].fleetd : null,
+        releaseServer: relIdx < allSprints.length ? allSprints[relIdx].server : null,
+        releaseFleetd: relIdx < allSprints.length ? allSprints[relIdx].fleetd : null,
+        releaseDue: relIdx < allSprints.length ? allSprints[relIdx].due : null
       });
     }
 
@@ -3129,26 +3143,38 @@ function renderGantt(sprints) {
   const today = new Date().toISOString().slice(0, 10);
 
   container.innerHTML = '<div class="gantt">' + sprints.map((s, i) => {
-    const due = s.due;
     const isCurrent = i === 0;
-    const dueDate = new Date(due);
-    const dueStr = dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const endDate = new Date(s.sprintEnd);
+    const endStr = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
     const serverItem = s.server
-      ? '<div class="gantt-item gantt-item-server">' + escapeHtml(s.server.title) + '<br><span>' + s.server.open + ' open tickets</span></div>'
+      ? '<div class="gantt-item gantt-item-server">' + escapeHtml(s.server.title) + '<br><span>' + s.server.open + ' open</span></div>'
       : '';
     const fleetdItem = s.fleetd
-      ? '<div class="gantt-item gantt-item-fleetd">' + escapeHtml(s.fleetd.title) + '<br><span>' + s.fleetd.open + ' open tickets</span></div>'
+      ? '<div class="gantt-item gantt-item-fleetd">' + escapeHtml(s.fleetd.title) + '<br><span>' + s.fleetd.open + ' open</span></div>'
       : '';
+
+    // Release arrow: shows what gets released ~2/3 through this sprint (from previous sprint's dev)
+    let releaseArrow = '';
+    if (s.releaseServer || s.releaseFleetd) {
+      const names = [s.releaseServer ? s.releaseServer.title : '', s.releaseFleetd ? s.releaseFleetd.title : ''].filter(Boolean).join(' + ');
+      const relDate = s.releaseDue ? new Date(s.releaseDue).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+      releaseArrow = '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bg-border);text-align:center">'
+        + '<div style="color:var(--orange);font-size:16px">&#9650;</div>'
+        + '<div style="font-size:10px;color:var(--orange);font-weight:600">Release ' + relDate + '</div>'
+        + '<div style="font-size:10px;color:var(--fg-muted)">' + escapeHtml(names) + '</div>'
+        + '</div>';
+    }
 
     return '<div class="gantt-sprint' + (isCurrent ? ' current' : '') + '">'
       + '<div class="gantt-header">'
       + (isCurrent ? '<span style="color:var(--orange)">Current Sprint</span><br>' : '')
-      + '<span style="color:var(--fg-muted)">Ends ' + dueStr + '</span>'
+      + '<span style="color:var(--fg-muted)">Ends ' + endStr + '</span>'
       + '</div>'
       + '<div class="gantt-body">'
       + serverItem
       + fleetdItem
+      + releaseArrow
       + '</div></div>';
   }).join('') + '</div>';
 }
