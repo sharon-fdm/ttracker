@@ -1419,13 +1419,27 @@ end tell`);
       else if (m.title.startsWith('fleetd-v')) sprintMap[due].fleetd = m;
     }
 
-    // Sort by date, take current + 4 ahead
+    // Sort by date
     const today = new Date().toISOString().slice(0, 10);
-    const sprints = Object.values(sprintMap)
+    const allSprints = Object.values(sprintMap)
       .filter(s => s.server || s.fleetd)
-      .sort((a, b) => a.due.localeCompare(b.due))
-      .filter(s => s.due >= today)
-      .slice(0, 5);
+      .sort((a, b) => a.due.localeCompare(b.due));
+
+    // The development sprint for a milestone ends on the PREVIOUS milestone's due date.
+    // So: sprint ending today (due date of N) is developing N+1.
+    // Find the first sprint whose due >= today, that's the current release sprint.
+    // The development being done NOW is for the NEXT milestone.
+    const currentIdx = allSprints.findIndex(s => s.due >= today);
+    // Start from currentIdx+1 (what's being developed), show 5 sprints
+    // Each sprint block: development ends on previous due date, shows next milestone
+    const sprints = [];
+    for (let i = currentIdx + 1; i < Math.min(currentIdx + 6, allSprints.length); i++) {
+      sprints.push({
+        due: allSprints[i - 1].due, // sprint ends on previous milestone's due date
+        server: allSprints[i].server,
+        fleetd: allSprints[i].fleetd
+      });
+    }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ sprints }));
@@ -3117,12 +3131,8 @@ function renderGantt(sprints) {
   container.innerHTML = '<div class="gantt">' + sprints.map((s, i) => {
     const due = s.due;
     const isCurrent = i === 0;
-    // Calculate sprint start (21 days before due)
     const dueDate = new Date(due);
-    const startDate = new Date(dueDate);
-    startDate.setDate(startDate.getDate() - 20);
-    const startStr = startDate.toISOString().slice(5, 10);
-    const dueStr = dueDate.toISOString().slice(5, 10);
+    const dueStr = dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
     const serverItem = s.server
       ? '<div class="gantt-item gantt-item-server">' + escapeHtml(s.server.title) + '<br><span>' + s.server.open + ' open tickets</span></div>'
@@ -3134,7 +3144,7 @@ function renderGantt(sprints) {
     return '<div class="gantt-sprint' + (isCurrent ? ' current' : '') + '">'
       + '<div class="gantt-header">'
       + (isCurrent ? '<span style="color:var(--orange)">Current Sprint</span><br>' : '')
-      + '<span style="color:var(--fg-muted)">' + startStr + ' &rarr; ' + dueStr + '</span>'
+      + '<span style="color:var(--fg-muted)">Ends ' + dueStr + '</span>'
       + '</div>'
       + '<div class="gantt-body">'
       + serverItem
