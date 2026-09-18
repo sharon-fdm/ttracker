@@ -1396,6 +1396,114 @@ end tell`);
     return;
   }
 
+  // GET /api/release-teams
+  if (req.method === 'GET' && url.pathname === '/api/release-teams') {
+    const state = loadState();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(state.releaseTeams || []));
+    return;
+  }
+
+  // POST /api/release-teams
+  if (req.method === 'POST' && url.pathname === '/api/release-teams') {
+    const body = await new Promise((resolve) => {
+      let data = '';
+      req.on('data', c => data += c);
+      req.on('end', () => resolve(data));
+    });
+    const { team } = JSON.parse(body);
+    if (!team) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Team label required' }));
+      return;
+    }
+    const state = loadState();
+    if (!state.releaseTeams) state.releaseTeams = [];
+    if (!state.releaseTeams.includes(team)) {
+      state.releaseTeams.push(team);
+      saveState(state);
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // DELETE /api/release-teams/:team
+  if (req.method === 'DELETE' && pathParts[0] === 'api' && pathParts[1] === 'release-teams' && pathParts[2]) {
+    const team = decodeURIComponent(pathParts[2]);
+    const state = loadState();
+    state.releaseTeams = (state.releaseTeams || []).filter(t => t !== team);
+    saveState(state);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // GET /api/releases
+  if (req.method === 'GET' && url.pathname === '/api/releases') {
+    const state = loadState();
+    const teams = state.releaseTeams || [];
+
+    // Fetch milestones with due dates
+    let milestones = [];
+    try {
+      const msData = await new Promise((resolve) => {
+        execFile('gh', ['api', 'repos/fleetdm/fleet/milestones?state=open&sort=due_on&direction=asc&per_page=30',
+          '--jq', '.[] | select(.due_on != null) | {title: .title, due: .due_on, open: .open_issues, number: .number}'],
+          { timeout: 15000 }, (err, stdout) => resolve(err ? '' : stdout.trim()));
+      });
+      if (msData) {
+        milestones = msData.split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
+      }
+    } catch {}
+
+    // Separate server and fleetd milestones
+    const today = new Date().toISOString().slice(0, 10);
+    const serverMs = milestones.filter(m => /^\d+\.\d+\.\d+$/.test(m.title)).sort((a, b) => a.due.localeCompare(b.due));
+    const fleetdMs = milestones.filter(m => m.title.startsWith('fleetd-v')).sort((a, b) => a.due.localeCompare(b.due));
+
+    // Determine phases: first future due = QA/Release, next = Development
+    function getPhases(msList) {
+      const future = msList.filter(m => m.due.slice(0, 10) >= today);
+      const qaRelease = future[0] || null;
+      const development = future[1] || null;
+      return { qaRelease, development };
+    }
+
+    const serverPhases = getPhases(serverMs);
+    const fleetdPhases = getPhases(fleetdMs);
+
+    // Get team ticket counts per milestone
+    const teamCounts = {};
+    const relevantMs = [serverPhases.qaRelease, serverPhases.development, fleetdPhases.qaRelease, fleetdPhases.development].filter(Boolean);
+
+    for (const team of teams) {
+      teamCounts[team] = {};
+      for (const ms of relevantMs) {
+        try {
+          const count = await new Promise((resolve) => {
+            execFile('gh', ['issue', 'list', '--repo', 'fleetdm/fleet',
+              '--milestone', ms.title, '--label', team, '--state', 'open',
+              '--json', 'number', '--jq', 'length'],
+              { timeout: 15000 }, (err, stdout) => resolve(err ? '0' : stdout.trim()));
+          });
+          teamCounts[team][ms.title] = parseInt(count) || 0;
+        } catch {
+          teamCounts[team][ms.title] = 0;
+        }
+      }
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      server: serverPhases,
+      fleetd: fleetdPhases,
+      teams,
+      teamCounts
+    }));
+    return;
+  }
+
   // GET /api/px-teams
   if (req.method === 'GET' && url.pathname === '/api/px-teams') {
     const state = loadState();
@@ -1973,6 +2081,7 @@ function getDashboardHTML() {
       <button class="tab" onclick="switchTab('notes')">Notes</button>
       <button class="tab" onclick="switchTab('prs')">PR Assignees</button>
       <button class="tab" onclick="switchTab('px')">PX Teams</button>
+      <button class="tab" onclick="switchTab('releases')">Releases</button>
     </div>
   </div>
   <div>
@@ -2093,6 +2202,17 @@ function getDashboardHTML() {
     <span id="px-status" style="color:var(--fg-muted);font-size:12px;margin-left:8px"></span>
   </div>
   <div id="px-sections"></div>
+</div>
+
+<div id="tab-releases" class="tab-content">
+  <div class="new-session" style="margin-bottom:16px">
+    <input id="rel-team-input" type="text" placeholder="Team label (e.g. #g-orchestration)" style="width:280px" onkeydown="if(event.key==='Enter')addRelTeam()" />
+    <button class="btn-new" onclick="addRelTeam()">Add Team</button>
+    <button class="refresh-btn" onclick="refreshReleases()" id="rel-refresh-btn">Refresh</button>
+    <span id="rel-status" style="color:var(--fg-muted);font-size:12px;margin-left:8px"></span>
+  </div>
+  <div id="rel-overview"></div>
+  <div id="rel-sections"></div>
 </div>
 
 <div id="delete-modal" class="modal-overlay">
@@ -3009,12 +3129,101 @@ function renderPX(teams, issues) {
   }).join('');
 }
 
+// ─── Releases ────────────────────────────────────────────────────
+async function addRelTeam() {
+  const input = document.getElementById('rel-team-input');
+  const team = input.value.trim();
+  if (!team) return;
+  await fetch(API + '/api/release-teams', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ team })
+  });
+  input.value = '';
+  await refreshReleases();
+}
+
+async function removeRelTeam(team) {
+  await fetch(API + '/api/release-teams/' + encodeURIComponent(team), { method: 'DELETE' });
+  await refreshReleases();
+}
+
+async function refreshReleases() {
+  const btn = document.getElementById('rel-refresh-btn');
+  const st = document.getElementById('rel-status');
+  btn.disabled = true;
+  btn.textContent = 'Loading...';
+  st.textContent = '';
+
+  try {
+    const res = await fetch(API + '/api/releases');
+    const data = await res.json();
+    renderReleases(data);
+    st.textContent = 'Updated';
+  } catch (e) {
+    st.textContent = 'Error: ' + e.message;
+  }
+
+  btn.textContent = 'Refresh';
+  btn.disabled = false;
+}
+
+function renderReleases(data) {
+  const overview = document.getElementById('rel-overview');
+  const sections = document.getElementById('rel-sections');
+
+  // Overview: current release phases
+  function phaseCard(product, phases) {
+    const qa = phases.qaRelease;
+    const dev = phases.development;
+    return '<div style="display:inline-block;vertical-align:top;margin-right:24px;margin-bottom:16px;padding:12px 16px;background:var(--bg-alt);border-radius:6px;min-width:200px">'
+      + '<div style="font-weight:700;color:var(--blue);margin-bottom:8px">' + product + '</div>'
+      + (qa ? '<div style="margin-bottom:4px"><span style="color:var(--orange);font-weight:600">QA/Release:</span> ' + escapeHtml(qa.title) + ' <span style="color:var(--fg-muted);font-size:11px">(due ' + qa.due.slice(0,10) + ', ' + qa.open + ' open)</span></div>' : '')
+      + (dev ? '<div><span style="color:var(--green);font-weight:600">Development:</span> ' + escapeHtml(dev.title) + ' <span style="color:var(--fg-muted);font-size:11px">(due ' + dev.due.slice(0,10) + ', ' + dev.open + ' open)</span></div>' : '')
+      + '</div>';
+  }
+
+  overview.innerHTML = phaseCard('Fleet Server', data.server) + phaseCard('FleetD Agent', data.fleetd);
+
+  // Team breakdown
+  const teams = data.teams || [];
+  if (teams.length === 0) {
+    sections.innerHTML = '<p class="empty-state">Add team labels to see ticket counts per release.</p>';
+    return;
+  }
+
+  const milestones = [data.server.qaRelease, data.server.development, data.fleetd.qaRelease, data.fleetd.development].filter(Boolean);
+  // Deduplicate (server and fleetd might share due dates but different milestones)
+  const msNames = milestones.map(m => m.title);
+
+  sections.innerHTML = '<table><thead><tr><th>Team</th>'
+    + milestones.map(m => {
+      const phase = (m === data.server.qaRelease || m === data.fleetd.qaRelease) ? 'QA' : 'Dev';
+      return '<th style="text-align:center"><span style="font-size:10px;color:' + (phase === 'QA' ? 'var(--orange)' : 'var(--green)') + '">' + phase + '</span><br>' + escapeHtml(m.title) + '</th>';
+    }).join('')
+    + '<th style="width:30px"></th></tr></thead><tbody>'
+    + teams.map(team => {
+      const counts = data.teamCounts[team] || {};
+      return '<tr><td style="font-weight:600;color:var(--blue)">' + escapeHtml(team) + '</td>'
+        + milestones.map(m => {
+          const c = counts[m.title] || 0;
+          const color = c === 0 ? 'var(--fg-muted)' : c > 10 ? 'var(--red)' : c > 5 ? 'var(--orange)' : 'var(--fg)';
+          const link = 'https://github.com/fleetdm/fleet/issues?q=is%3Aopen+milestone%3A%22' + encodeURIComponent(m.title) + '%22+label%3A' + encodeURIComponent(team);
+          return '<td style="text-align:center"><a href="' + link + '" target="_blank" style="color:' + color + ';font-weight:600;text-decoration:none">' + c + '</a></td>';
+        }).join('')
+        + '<td><button class="btn btn-delete" style="font-size:10px;padding:2px 6px" onclick="removeRelTeam(\\'' + escapeAttr(team) + '\\')">x</button></td>'
+        + '</tr>';
+    }).join('')
+    + '</tbody></table>';
+}
+
 // Initial load + auto-refresh
 refresh();
 loadProjects();
 loadStickies();
 refreshPRs();
 refreshPX();
+refreshReleases();
 refreshTimer = setInterval(refresh, 5000);
 </script>
 
