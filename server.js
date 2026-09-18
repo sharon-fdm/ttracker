@@ -1433,7 +1433,7 @@ end tell`);
     if (currentIdx < 0) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ sprints: [] })); return; }
 
     // The current sprint end is the due date of the current milestone
-    const firstSprintEnd = new Date(allSprints[currentIdx].due);
+    const firstSprintEnd = new Date(allSprints[currentIdx].due.slice(0,10) + 'T12:00:00Z');
 
     const sprints = [];
     for (let i = 0; i < 7; i++) {
@@ -3158,7 +3158,7 @@ function renderGantt(sprints) {
     let releaseArrow = '';
     if (s.releaseServer || s.releaseFleetd) {
       const names = [s.releaseServer ? s.releaseServer.title : '', s.releaseFleetd ? s.releaseFleetd.title : ''].filter(Boolean).join(' + ');
-      const relDate = s.releaseDue ? new Date(s.releaseDue).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+      const relDate = s.releaseDue ? new Date(s.releaseDue.slice(0,10) + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
       releaseArrow = '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bg-border);text-align:center">'
         + '<div style="color:var(--orange);font-size:16px">&#9650;</div>'
         + '<div style="font-size:10px;color:var(--orange);font-weight:600">Release ' + relDate + '</div>'
