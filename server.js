@@ -1872,7 +1872,7 @@ function getDashboardHTML() {
     font-weight: 600;
     font-size: 12px;
   }
-  .gantt-body { padding: 12px; position: relative; min-height: 140px; }
+  .gantt-body { padding: 12px; }
   .gantt-item {
     padding: 8px 10px;
     border-radius: 4px;
@@ -3159,7 +3159,7 @@ function renderGantt(sprints) {
     if (s.releaseServer || s.releaseFleetd) {
       const names = [s.releaseServer ? s.releaseServer.title : '', s.releaseFleetd ? s.releaseFleetd.title : ''].filter(Boolean).join(' + ');
       const relDate = s.releaseDue ? new Date(s.releaseDue.slice(0,10) + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
-      releaseArrow = '<div style="position:absolute;left:0;right:0;top:66%;text-align:center">'
+      releaseArrow = '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bg-border);margin-left:66%;text-align:center">'
         + '<div style="color:var(--orange);font-size:16px">&#9650;</div>'
         + '<div style="font-size:10px;color:var(--orange);font-weight:600">Release ' + relDate + '</div>'
         + '<div style="font-size:10px;color:var(--fg-muted)">' + escapeHtml(names) + '</div>'
