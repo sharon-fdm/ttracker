@@ -1410,48 +1410,50 @@ end tell`);
       }
     } catch {}
 
-    // Group by due date into sprints
-    const sprintMap = {};
-    for (const m of milestones) {
-      const due = m.due.slice(0, 10);
-      if (!sprintMap[due]) sprintMap[due] = { due, server: null, fleetd: null };
-      if (/^\d+\.\d+\.\d+$/.test(m.title)) sprintMap[due].server = m;
-      else if (m.title.startsWith('fleetd-v')) sprintMap[due].fleetd = m;
-    }
+    // Separate server and fleetd milestones, sorted by due date
+    const serverMs = milestones.filter(m => /^\d+\.\d+\.\d+$/.test(m.title)).sort((a, b) => a.due.localeCompare(b.due));
+    const fleetdMs = milestones.filter(m => m.title.startsWith('fleetd-v')).sort((a, b) => a.due.localeCompare(b.due));
 
-    // Sort by date
-    const today = new Date().toISOString().slice(0, 10);
-    const allSprints = Object.values(sprintMap)
-      .filter(s => s.server || s.fleetd)
-      .sort((a, b) => a.due.localeCompare(b.due));
+    // Sprint cadence: fixed 3-week (21-day) cycles anchored to Sep 18, 2026
+    const ANCHOR = new Date('2026-09-18T12:00:00Z'); // last day of a known sprint
+    const today = new Date(new Date().toISOString().slice(0,10) + 'T12:00:00Z');
+    const SPRINT_DAYS = 21;
 
-    // Sprint cadence: 3 weeks (21 days). The milestone due date is the RELEASE date
-    // (around 2 weeks into the next sprint), not the sprint end date.
-    // Sprint end dates are Fridays, 21 days apart.
-    // Find the current sprint end: the first milestone due date >= today
-    const currentIdx = allSprints.findIndex(s => s.due >= today);
-    if (currentIdx < 0) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ sprints: [] })); return; }
+    // Find the most recent sprint end <= today
+    const daysSinceAnchor = Math.floor((today - ANCHOR) / 86400000);
+    const sprintsSinceAnchor = Math.floor(daysSinceAnchor / SPRINT_DAYS);
+    const lastSprintEnd = new Date(ANCHOR);
+    lastSprintEnd.setDate(lastSprintEnd.getDate() + (sprintsSinceAnchor * SPRINT_DAYS));
 
-    // The current sprint end is the due date of the current milestone
-    const firstSprintEnd = new Date(allSprints[currentIdx].due.slice(0,10) + 'T12:00:00Z');
-
+    // Build 7 sprints: previous (ended), current, + 5 ahead
+    // Sprint 0 = the one that just ended (or ends today)
+    // Sprint 1 = current sprint being worked on
     const sprints = [];
     for (let i = 0; i < 7; i++) {
-      const sprintEnd = new Date(firstSprintEnd);
-      sprintEnd.setDate(sprintEnd.getDate() + (i * 21));
+      const sprintEnd = new Date(lastSprintEnd);
+      sprintEnd.setDate(sprintEnd.getDate() + (i * SPRINT_DAYS));
+      const sprintEndStr = sprintEnd.toISOString().slice(0, 10);
 
-      // What's being DEVELOPED this sprint = milestone at currentIdx + 1 + i
-      const devIdx = currentIdx + 1 + i;
-      // What was RELEASED during this sprint (from previous sprint's dev) = milestone at currentIdx + i
-      const relIdx = currentIdx + i;
+      // Development: what's being developed ends on this sprint's end date
+      // The milestone whose release date falls in the NEXT sprint is what we're developing
+      // Milestones are ordered by due date. Find the one with due date closest after this sprint end
+      const devServer = serverMs.find(m => m.due.slice(0,10) > sprintEndStr);
+      const devFleetd = fleetdMs.find(m => m.due.slice(0,10) > sprintEndStr);
+
+      // Release: milestone whose due date falls WITHIN this sprint (between prev end and this end)
+      const prevEnd = new Date(sprintEnd);
+      prevEnd.setDate(prevEnd.getDate() - SPRINT_DAYS);
+      const prevEndStr = prevEnd.toISOString().slice(0, 10);
+      const relServer = serverMs.find(m => m.due.slice(0,10) > prevEndStr && m.due.slice(0,10) <= sprintEndStr);
+      const relFleetd = fleetdMs.find(m => m.due.slice(0,10) > prevEndStr && m.due.slice(0,10) <= sprintEndStr);
 
       sprints.push({
-        sprintEnd: sprintEnd.toISOString().slice(0, 10),
-        server: devIdx < allSprints.length ? allSprints[devIdx].server : null,
-        fleetd: devIdx < allSprints.length ? allSprints[devIdx].fleetd : null,
-        releaseServer: relIdx < allSprints.length ? allSprints[relIdx].server : null,
-        releaseFleetd: relIdx < allSprints.length ? allSprints[relIdx].fleetd : null,
-        releaseDue: relIdx < allSprints.length ? allSprints[relIdx].due : null
+        sprintEnd: sprintEndStr,
+        server: devServer,
+        fleetd: devFleetd,
+        releaseServer: relServer,
+        releaseFleetd: relFleetd,
+        releaseDue: relServer ? relServer.due : (relFleetd ? relFleetd.due : null)
       });
     }
 
