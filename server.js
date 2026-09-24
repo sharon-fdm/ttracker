@@ -169,9 +169,21 @@ function getSessionFileSize(claudeSessionId) {
   if (!claudeSessionId) return 0;
   const projDir = findProjectDir(claudeSessionId);
   if (!projDir) return 0;
+  let total = 0;
+  const base = path.join(CLAUDE_PROJECTS_DIR, projDir);
+  // JSONL file
+  try { total += fs.statSync(path.join(base, `${claudeSessionId}.jsonl`)).size; } catch {}
+  // Session directory (if exists)
   try {
-    return fs.statSync(path.join(CLAUDE_PROJECTS_DIR, projDir, `${claudeSessionId}.jsonl`)).size;
-  } catch { return 0; }
+    const dir = path.join(base, claudeSessionId);
+    if (fs.statSync(dir).isDirectory()) {
+      const files = fs.readdirSync(dir);
+      for (const f of files) {
+        try { total += fs.statSync(path.join(dir, f)).size; } catch {}
+      }
+    }
+  } catch {}
+  return total;
 }
 
 function formatSize(bytes) {
@@ -2151,7 +2163,12 @@ function getDashboardHTML() {
   <tbody id="active-body"></tbody>
 </table>
 
-<h2 class="history-heading">Parked Sessions <span class="count" id="history-count"></span></h2>
+<h2 class="history-heading">Parked Sessions <span class="count" id="history-count"></span>
+  <span style="font-size:11px;font-weight:400;margin-left:12px">Sort:
+    <button class="btn" style="background:var(--fg-muted);font-size:10px;padding:2px 8px" onclick="sortHistory('date')">Recent</button>
+    <button class="btn" style="background:var(--fg-muted);font-size:10px;padding:2px 8px" onclick="sortHistory('size')">Size</button>
+  </span>
+</h2>
 <table>
   <thead>
     <tr>
@@ -2161,6 +2178,7 @@ function getDashboardHTML() {
       <th>Folder</th>
       <th>Note</th>
       <th>Claude Session</th>
+      <th style="width:80px">Size</th>
       <th>Parked At</th>
       <th>Status</th>
       <th style="width:100px">Action</th>
@@ -2335,16 +2353,31 @@ function renderActive(data) {
   }).join('');
 }
 
+let historySortMode = 'date';
+let lastHistoryEntries = [];
+
+function sortHistory(mode) {
+  historySortMode = mode;
+  renderHistory(lastHistoryEntries);
+}
+
 function renderHistory(entries) {
+  lastHistoryEntries = entries;
   const el = document.getElementById('history-body');
   document.getElementById('history-count').textContent = '(' + entries.length + ')';
 
   if (entries.length === 0) {
-    el.innerHTML = '<tr><td colspan="9" class="empty-state">No parked sessions</td></tr>';
+    el.innerHTML = '<tr><td colspan="10" class="empty-state">No parked sessions</td></tr>';
     return;
   }
 
-  el.innerHTML = entries.map((h, i) => {
+  // Sort entries
+  const sorted = [...entries].sort((a, b) => {
+    if (historySortMode === 'size') return (b.file_size || 0) - (a.file_size || 0);
+    return (b.parked_at || '').localeCompare(a.parked_at || '');
+  });
+
+  el.innerHTML = sorted.map((h, i) => {
     const hKey = h.claude_session_id || h.iterm_uuid;
     let action = '';
     if (h.status === 'running') {
@@ -2366,6 +2399,7 @@ function renderHistory(entries) {
       + 'onblur="saveNote(\\'' + hKey + '\\', this.value)" '
       + 'onkeydown="if(event.key===\\'Enter\\')this.blur()" /></td>'
       + '<td class="session-id">' + escapeHtml(h.claude_session_id) + '</td>'
+      + '<td style="font-size:11px;color:' + (h.file_size > 5242880 ? 'var(--orange)' : 'var(--fg-muted)') + '">' + formatFileSize(h.file_size || 0) + '</td>'
       + '<td class="parked-at">' + escapeHtml(h.parked_at) + '</td>'
       + '<td>' + statusDot(h.status) + '</td>'
       + '<td class="actions">' + action + '</td>'
