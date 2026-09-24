@@ -3204,15 +3204,26 @@ function renderGantt(sprints) {
       ? '<div class="gantt-item gantt-item-fleetd">' + escapeHtml(s.fleetd.title) + '<br><span>' + s.fleetd.open + ' open</span></div>'
       : '';
 
-    // Release arrow: shows what gets released ~2/3 through this sprint (from previous sprint's dev)
+    // RC cut arrow: at ~1/3 of sprint, cut RC for previous sprint's dev work
+    let rcArrow = '';
+    if (s.releaseServer || s.releaseFleetd) {
+      const rcNames = [s.releaseServer ? s.releaseServer.title : '', s.releaseFleetd ? s.releaseFleetd.title : ''].filter(Boolean).join(' + ');
+      rcArrow = '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bg-border);margin-right:66%;text-align:center">'
+        + '<div style="color:var(--violet);font-size:16px">&#9650;</div>'
+        + '<div style="font-size:10px;color:var(--violet);font-weight:600">Cut RC</div>'
+        + '<div style="font-size:10px;color:var(--fg-muted)">' + escapeHtml(rcNames) + '</div>'
+        + '</div>';
+    }
+
+    // Release arrow: at ~2/3 of sprint, release the same versions
     let releaseArrow = '';
     if (s.releaseServer || s.releaseFleetd) {
-      const names = [s.releaseServer ? s.releaseServer.title : '', s.releaseFleetd ? s.releaseFleetd.title : ''].filter(Boolean).join(' + ');
+      const relNames = [s.releaseServer ? s.releaseServer.title : '', s.releaseFleetd ? s.releaseFleetd.title : ''].filter(Boolean).join(' + ');
       const relDate = s.releaseDue ? new Date(s.releaseDue.slice(0,10) + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
-      releaseArrow = '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bg-border);margin-left:66%;text-align:center">'
+      releaseArrow = '<div style="margin-top:4px;margin-left:66%;text-align:center">'
         + '<div style="color:var(--orange);font-size:16px">&#9650;</div>'
         + '<div style="font-size:10px;color:var(--orange);font-weight:600">Release ' + relDate + '</div>'
-        + '<div style="font-size:10px;color:var(--fg-muted)">' + escapeHtml(names) + '</div>'
+        + '<div style="font-size:10px;color:var(--fg-muted)">' + escapeHtml(relNames) + '</div>'
         + '</div>';
     }
 
@@ -3224,6 +3235,7 @@ function renderGantt(sprints) {
       + '<div class="gantt-body">'
       + serverItem
       + fleetdItem
+      + rcArrow
       + releaseArrow
       + '</div></div>';
   }).join('') + '</div>';
