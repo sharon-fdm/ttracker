@@ -1390,7 +1390,7 @@ end tell`);
           delete pr.reviews;
           delete pr.files;
           return { ...pr, reviewStatus, totalLines, prodLines, testLines };
-        }) : [];
+        });
       } catch {
         results[user] = [];
       }
