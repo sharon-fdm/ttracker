@@ -196,10 +196,19 @@ function deleteSessionFile(claudeSessionId) {
   if (!claudeSessionId) return false;
   const projDir = findProjectDir(claudeSessionId);
   if (!projDir) return false;
+  const base = path.join(CLAUDE_PROJECTS_DIR, projDir);
+  let deleted = false;
+  // Delete the JSONL conversation file
+  try { fs.unlinkSync(path.join(base, `${claudeSessionId}.jsonl`)); deleted = true; } catch {}
+  // Delete the session directory (contains worktree data, etc.)
   try {
-    fs.unlinkSync(path.join(CLAUDE_PROJECTS_DIR, projDir, `${claudeSessionId}.jsonl`));
-    return true;
-  } catch { return false; }
+    const dir = path.join(base, claudeSessionId);
+    if (fs.statSync(dir).isDirectory()) {
+      fs.rmSync(dir, { recursive: true });
+      deleted = true;
+    }
+  } catch {}
+  return deleted;
 }
 
 // ─── State Management ────────────────────────────────────────────────────────
