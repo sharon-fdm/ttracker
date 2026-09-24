@@ -1259,6 +1259,49 @@ end tell`);
     return;
   }
 
+  // GET /api/github-repos
+  if (req.method === 'GET' && url.pathname === '/api/github-repos') {
+    const state = loadState();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(state.githubRepos || ['fleetdm/fleet']));
+    return;
+  }
+
+  // POST /api/github-repos
+  if (req.method === 'POST' && url.pathname === '/api/github-repos') {
+    const body = await new Promise((resolve) => {
+      let data = '';
+      req.on('data', c => data += c);
+      req.on('end', () => resolve(data));
+    });
+    const { repo } = JSON.parse(body);
+    if (!repo || !repo.includes('/')) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Format: owner/repo' }));
+      return;
+    }
+    const state = loadState();
+    if (!state.githubRepos) state.githubRepos = ['fleetdm/fleet'];
+    if (!state.githubRepos.includes(repo)) {
+      state.githubRepos.push(repo);
+      saveState(state);
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // DELETE /api/github-repos/:repo
+  if (req.method === 'DELETE' && pathParts[0] === 'api' && pathParts[1] === 'github-repos' && pathParts[2]) {
+    const repo = decodeURIComponent(pathParts.slice(2).join('/'));
+    const state = loadState();
+    state.githubRepos = (state.githubRepos || ['fleetdm/fleet']).filter(r => r !== repo);
+    saveState(state);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
   // GET /api/github-users
   if (req.method === 'GET' && url.pathname === '/api/github-users') {
     const state = loadState();
@@ -1306,20 +1349,29 @@ end tell`);
   if (req.method === 'GET' && url.pathname === '/api/github-prs') {
     const state = loadState();
     const users = state.githubUsers || [];
+    const repos = state.githubRepos || ['fleetdm/fleet'];
     const results = {};
 
     for (const user of users) {
+      let allPrs = [];
+      for (const repo of repos) {
+        try {
+          const prData = await new Promise((resolve) => {
+            execFile('gh', [
+              'pr', 'list', '--repo', repo,
+              '--assignee', user, '--state', 'open',
+              '--json', 'number,title,url,author,createdAt,isDraft,reviewDecision,reviews,additions,deletions,files',
+              '--limit', '50'
+            ], { timeout: 15000 }, (err, stdout) => resolve(err ? '' : stdout.trim()));
+          });
+          if (prData) {
+            const parsed = JSON.parse(prData).map(pr => ({ ...pr, repo }));
+            allPrs.push(...parsed);
+          }
+        } catch {}
+      }
       try {
-        const prData = await new Promise((resolve) => {
-          execFile('gh', [
-            'pr', 'list', '--repo', 'fleetdm/fleet',
-            '--assignee', user, '--state', 'open',
-            '--json', 'number,title,url,author,createdAt,isDraft,reviewDecision,reviews,additions,deletions,files',
-            '--limit', '50'
-          ], { timeout: 15000 }, (err, stdout) => resolve(err ? '' : stdout.trim()));
-        });
-        const botNames = new Set(['coderabbitai','copilot-pull-request-reviewer','qodo-free-for-open-source-projects']);
-        results[user] = prData ? JSON.parse(prData).filter(pr => !pr.isDraft).map(pr => {
+        results[user] = allPrs.filter(pr => !pr.isDraft).map(pr => {
           const userReviews = (pr.reviews || []).filter(r => r.author && r.author.login === user);
           const userApproved = userReviews.some(r => r.state === 'APPROVED');
           const userCommented = userReviews.some(r => r.state === 'COMMENTED');
@@ -1399,11 +1451,11 @@ end tell`);
       req.on('data', c => data += c);
       req.on('end', () => resolve(data));
     });
-    const { prNumber, fromUser, toUser } = JSON.parse(body);
+    const { prNumber, fromUser, toUser, repo } = JSON.parse(body);
     try {
       await new Promise((resolve, reject) => {
         execFile('gh', [
-          'pr', 'edit', String(prNumber), '--repo', 'fleetdm/fleet',
+          'pr', 'edit', String(prNumber), '--repo', repo || 'fleetdm/fleet',
           '--add-assignee', toUser, '--remove-assignee', fromUser
         ], { timeout: 15000 }, (err) => err ? reject(err) : resolve());
       });
@@ -2203,6 +2255,11 @@ function getDashboardHTML() {
 </div>
 
 <div id="tab-prs" class="tab-content">
+  <div class="new-session" style="margin-bottom:8px">
+    <input id="gh-repo-input" type="text" placeholder="owner/repo (e.g. fleetdm/fleet)" style="width:250px" onkeydown="if(event.key==='Enter')addGhRepo()" />
+    <button class="btn-new" style="background:var(--violet)" onclick="addGhRepo()">Add Repo</button>
+    <span id="gh-repos-list" style="font-size:11px;margin-left:8px"></span>
+  </div>
   <div class="new-session" style="margin-bottom:16px">
     <input id="gh-user-input" type="text" placeholder="GitHub username" style="width:200px" onkeydown="if(event.key==='Enter')addGhUser()" />
     <button class="btn-new" onclick="addGhUser()">Add User</button>
@@ -2947,6 +3004,39 @@ async function loadStickies() {
 }
 
 // ─── PR Assignees ────────────────────────────────────────────────
+async function addGhRepo() {
+  const input = document.getElementById('gh-repo-input');
+  const repo = input.value.trim();
+  if (!repo || !repo.includes('/')) return;
+  await fetch(API + '/api/github-repos', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ repo })
+  });
+  input.value = '';
+  await loadGhRepos();
+  await refreshPRs();
+}
+
+async function removeGhRepo(repo) {
+  await fetch(API + '/api/github-repos/' + encodeURIComponent(repo), { method: 'DELETE' });
+  await loadGhRepos();
+  await refreshPRs();
+}
+
+async function loadGhRepos() {
+  try {
+    const res = await fetch(API + '/api/github-repos');
+    const repos = await res.json();
+    document.getElementById('gh-repos-list').innerHTML = repos.map(r =>
+      '<span style="background:var(--bg-alt);padding:2px 6px;border-radius:3px;margin-right:4px">'
+      + escapeHtml(r)
+      + ' <span style="cursor:pointer;color:var(--red)" onclick="removeGhRepo(\\'' + escapeAttr(r) + '\\')">&times;</span>'
+      + '</span>'
+    ).join('');
+  } catch {}
+}
+
 async function addGhUser() {
   const input = document.getElementById('gh-user-input');
   const username = input.value.trim();
@@ -3009,11 +3099,11 @@ function renderPRs(users, prs) {
         const age = Math.floor((Date.now() - new Date(pr.createdAt).getTime()) / 86400000);
         const ageColor = age > 7 ? 'var(--red)' : age > 3 ? 'var(--orange)' : 'var(--fg)';
         const reassignBtns = otherUsers.map(other =>
-          '<button class="btn btn-focus" style="font-size:10px;padding:2px 8px;margin:1px" onclick="reassignPR(' + pr.number + ', \\'' + escapeAttr(user) + '\\', \\'' + escapeAttr(other) + '\\')">' + escapeHtml(other) + '</button>'
+          '<button class="btn btn-focus" style="font-size:10px;padding:2px 8px;margin:1px" onclick="reassignPR(' + pr.number + ', \\'' + escapeAttr(user) + '\\', \\'' + escapeAttr(other) + '\\', \\'' + escapeAttr(pr.repo || '') + '\\')">' + escapeHtml(other) + '</button>'
         ).join(' ');
         return '<tr>'
           + '<td><a href="' + escapeHtml(pr.url) + '" target="_blank" style="color:var(--blue);text-decoration:none">#' + pr.number + '</a></td>'
-          + '<td>' + escapeHtml(pr.title) + (pr.isDraft ? ' <span style="color:var(--fg-muted);font-size:10px">[draft]</span>' : '') + '</td>'
+          + '<td>' + escapeHtml(pr.title) + (pr.repo && pr.repo !== 'fleetdm/fleet' ? ' <span style="color:var(--violet);font-size:10px">[' + escapeHtml(pr.repo.split('/')[1]) + ']</span>' : '') + '</td>'
           + '<td>' + escapeHtml(pr.author.login) + '</td>'
           + '<td style="font-size:11px">' + (function() {
             var s = pr.reviewStatus;
@@ -3045,7 +3135,7 @@ function renderPRs(users, prs) {
   }).join('');
 }
 
-function reassignPR(prNumber, fromUser, toUser) {
+function reassignPR(prNumber, fromUser, toUser, repo) {
   const modal = document.getElementById('reassign-modal');
   document.getElementById('reassign-pr').textContent = '#' + prNumber;
   document.getElementById('reassign-to').textContent = toUser;
@@ -3054,7 +3144,7 @@ function reassignPR(prNumber, fromUser, toUser) {
     const res = await fetch(API + '/api/github-reassign', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prNumber, fromUser, toUser })
+      body: JSON.stringify({ prNumber, fromUser, toUser, repo })
     });
     const data = await res.json();
     if (data.ok) {
@@ -3245,6 +3335,7 @@ function renderGantt(sprints) {
 refresh();
 loadProjects();
 loadStickies();
+loadGhRepos();
 refreshPRs();
 refreshPX();
 refreshReleases();
