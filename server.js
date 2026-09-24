@@ -2187,7 +2187,7 @@ function getDashboardHTML() {
       <th>Folder</th>
       <th>Note</th>
       <th>Claude Session</th>
-      <th style="width:80px">Size</th>
+      <th style="width:100px">Size <span id="history-total-size" style="font-weight:400;color:var(--orange)"></span></th>
       <th>Parked At</th>
       <th>Status</th>
       <th style="width:100px">Action</th>
@@ -2374,6 +2374,8 @@ function renderHistory(entries) {
   lastHistoryEntries = entries;
   const el = document.getElementById('history-body');
   document.getElementById('history-count').textContent = '(' + entries.length + ')';
+  const totalSize = entries.reduce((sum, h) => sum + (h.file_size || 0), 0);
+  document.getElementById('history-total-size').textContent = totalSize ? '(' + formatFileSize(totalSize) + ')' : '';
 
   if (entries.length === 0) {
     el.innerHTML = '<tr><td colspan="10" class="empty-state">No parked sessions</td></tr>';
