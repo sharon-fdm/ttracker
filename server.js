@@ -2341,7 +2341,17 @@ function getDashboardHTML() {
         <span id="conf-pw-error" style="color:var(--red);font-size:12px;margin-left:8px"></span>
       </div>
     </div>
-    <textarea id="conf-textarea" style="width:100%;min-height:400px;background:var(--bg-alt);color:var(--fg);border:2px solid var(--red);border-radius:6px;padding:12px;font-family:inherit;font-size:13px;resize:vertical" oninput="saveConfidential()"></textarea>
+    <textarea id="conf-textarea" style="width:100%;min-height:200px;background:var(--bg-alt);color:var(--fg);border:2px solid var(--red);border-radius:6px;padding:12px;font-family:inherit;font-size:13px;resize:vertical" oninput="saveConfidential()"></textarea>
+    <div style="margin-top:16px;display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <span style="font-weight:600;color:var(--fg)">Encrypted Table</span>
+      <button class="btn" style="background:var(--green);font-size:10px;padding:2px 8px" onclick="addConfCol()">+ Column</button>
+      <button class="btn" style="background:var(--green);font-size:10px;padding:2px 8px" onclick="addConfRow()">+ Row</button>
+      <button class="btn" style="background:var(--red);font-size:10px;padding:2px 8px" onclick="removeConfCol()">- Column</button>
+      <button class="btn" style="background:var(--red);font-size:10px;padding:2px 8px" onclick="removeConfRow()">- Row</button>
+    </div>
+    <div style="overflow:auto;resize:both;min-height:150px;max-height:500px;border:2px solid var(--red);border-radius:6px;background:var(--bg-alt)">
+      <table id="conf-table" style="border-collapse:collapse;width:100%"></table>
+    </div>
   </div>
 </div>
 
@@ -3439,19 +3449,28 @@ async function unlockConfidential() {
     const data = await res.json();
 
     if (data.encrypted) {
-      // Try to decrypt with given password
       try {
-        const text = await decryptText(data.encrypted, pw);
+        const raw = await decryptText(data.encrypted, pw);
         confKey = pw;
-        document.getElementById('conf-textarea').value = text;
+        // Parse: could be plain text (legacy) or JSON {text, table}
+        try {
+          const parsed = JSON.parse(raw);
+          document.getElementById('conf-textarea').value = parsed.text || '';
+          confTableData = parsed.table || [['',''],['','']];
+        } catch {
+          document.getElementById('conf-textarea').value = raw;
+          confTableData = [['',''],['','']];
+        }
+        renderConfTable();
         showConfUnlocked();
       } catch {
         document.getElementById('conf-error').textContent = 'Wrong password.';
       }
     } else {
-      // First time - no data yet
       confKey = pw;
       document.getElementById('conf-textarea').value = '';
+      confTableData = [['','',''],['','',''],['','','']];
+      renderConfTable();
       showConfUnlocked();
     }
   } catch (e) {
@@ -3467,9 +3486,11 @@ function showConfUnlocked() {
 
 function lockConfidential() {
   confKey = null;
+  confTableData = [];
   document.getElementById('conf-locked').style.display = '';
   document.getElementById('conf-unlocked').style.display = 'none';
   document.getElementById('conf-textarea').value = '';
+  document.getElementById('conf-table').innerHTML = '';
   document.getElementById('conf-error').textContent = '';
 }
 
@@ -3479,13 +3500,73 @@ async function saveConfidential() {
   clearTimeout(confSaveTimer);
   confSaveTimer = setTimeout(async () => {
     const text = document.getElementById('conf-textarea').value;
-    const encrypted = await encryptText(text, confKey);
+    readConfTableData();
+    const payload = JSON.stringify({ text, table: confTableData });
+    const encrypted = await encryptText(payload, confKey);
     await fetch(API + '/api/confidential', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ encrypted })
     });
   }, 1000);
+}
+
+// ─── Confidential Table ──────────────────────────────────────────
+let confTableData = [];
+
+function renderConfTable() {
+  const table = document.getElementById('conf-table');
+  if (!confTableData.length) { table.innerHTML = ''; return; }
+  const cols = confTableData[0].length;
+  table.innerHTML = confTableData.map((row, ri) =>
+    '<tr>' + row.map((cell, ci) =>
+      '<td contenteditable="true" style="border:1px solid var(--bg-border);padding:4px 8px;min-width:80px;font-size:12px;color:var(--fg)'
+      + (ri === 0 ? ';font-weight:600;background:var(--bg)' : '')
+      + '" oninput="saveConfidential()">'
+      + escapeHtml(cell) + '</td>'
+    ).join('') + '</tr>'
+  ).join('');
+}
+
+function readConfTableData() {
+  const table = document.getElementById('conf-table');
+  const rows = table.querySelectorAll('tr');
+  confTableData = Array.from(rows).map(tr =>
+    Array.from(tr.querySelectorAll('td')).map(td => td.textContent)
+  );
+}
+
+function addConfRow() {
+  readConfTableData();
+  const cols = confTableData.length ? confTableData[0].length : 3;
+  confTableData.push(new Array(cols).fill(''));
+  renderConfTable();
+  saveConfidential();
+}
+
+function addConfCol() {
+  readConfTableData();
+  confTableData.forEach(row => row.push(''));
+  renderConfTable();
+  saveConfidential();
+}
+
+function removeConfRow() {
+  readConfTableData();
+  if (confTableData.length > 1) {
+    confTableData.pop();
+    renderConfTable();
+    saveConfidential();
+  }
+}
+
+function removeConfCol() {
+  readConfTableData();
+  if (confTableData.length && confTableData[0].length > 1) {
+    confTableData.forEach(row => row.pop());
+    renderConfTable();
+    saveConfidential();
+  }
 }
 
 function showChangePassword() {
@@ -3511,7 +3592,9 @@ async function changeConfPassword() {
 
   // Re-encrypt with new password
   const text = document.getElementById('conf-textarea').value;
-  const encrypted = await encryptText(text, newPw);
+  readConfTableData();
+  const payload = JSON.stringify({ text, table: confTableData });
+  const encrypted = await encryptText(payload, newPw);
   await fetch(API + '/api/confidential', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
