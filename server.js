@@ -2326,7 +2326,20 @@ function getDashboardHTML() {
   <div id="conf-unlocked" style="display:none">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <span style="color:var(--green);font-weight:600">&#128275; Unlocked</span>
-      <button class="btn" style="background:var(--red)" onclick="lockConfidential()">&#128274; Lock</button>
+      <div>
+        <button class="btn" style="background:var(--fg-muted)" onclick="showChangePassword()">Change Password</button>
+        <button class="btn" style="background:var(--red)" onclick="lockConfidential()">&#128274; Lock</button>
+      </div>
+    </div>
+    <div id="conf-change-pw" style="display:none;margin-bottom:12px;padding:12px;background:var(--bg-alt);border-radius:6px">
+      <div style="font-weight:600;margin-bottom:8px;color:var(--orange)">Change Password</div>
+      <div class="new-session" style="margin-bottom:0">
+        <input id="conf-new-pw" type="password" placeholder="New password" style="width:200px" autocomplete="off" data-1p-ignore="true" data-lpignore="true" onkeydown="if(event.key==='Enter')changeConfPassword()" />
+        <input id="conf-new-pw2" type="password" placeholder="Confirm new password" style="width:200px" autocomplete="off" data-1p-ignore="true" data-lpignore="true" onkeydown="if(event.key==='Enter')changeConfPassword()" />
+        <button class="btn" style="background:var(--orange)" onclick="changeConfPassword()">Change</button>
+        <button class="btn btn-cancel" onclick="hideChangePassword()">Cancel</button>
+        <span id="conf-pw-error" style="color:var(--red);font-size:12px;margin-left:8px"></span>
+      </div>
     </div>
     <textarea id="conf-textarea" style="width:100%;min-height:400px;background:var(--bg-alt);color:var(--fg);border:2px solid var(--red);border-radius:6px;padding:12px;font-family:inherit;font-size:13px;resize:vertical" oninput="saveConfidential()"></textarea>
   </div>
@@ -3473,6 +3486,45 @@ async function saveConfidential() {
       body: JSON.stringify({ encrypted })
     });
   }, 1000);
+}
+
+function showChangePassword() {
+  document.getElementById('conf-change-pw').style.display = '';
+  document.getElementById('conf-new-pw').value = '';
+  document.getElementById('conf-new-pw2').value = '';
+  document.getElementById('conf-pw-error').textContent = '';
+  document.getElementById('conf-new-pw').focus();
+}
+
+function hideChangePassword() {
+  document.getElementById('conf-change-pw').style.display = 'none';
+}
+
+async function changeConfPassword() {
+  const newPw = document.getElementById('conf-new-pw').value;
+  const newPw2 = document.getElementById('conf-new-pw2').value;
+  const errEl = document.getElementById('conf-pw-error');
+
+  if (!newPw) { errEl.textContent = 'Enter new password'; return; }
+  if (newPw !== newPw2) { errEl.textContent = 'Passwords do not match'; return; }
+  if (newPw === confKey) { errEl.textContent = 'Same as current password'; return; }
+
+  // Re-encrypt with new password
+  const text = document.getElementById('conf-textarea').value;
+  const encrypted = await encryptText(text, newPw);
+  await fetch(API + '/api/confidential', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ encrypted })
+  });
+
+  confKey = newPw;
+  hideChangePassword();
+  errEl.textContent = '';
+  // Brief confirmation
+  const span = document.querySelector('#conf-unlocked > div > span');
+  span.textContent = '\\u2705 Password changed!';
+  setTimeout(() => { span.innerHTML = '&#128275; Unlocked'; }, 2000);
 }
 
 // Auto-lock when page becomes hidden (switching Chrome tabs, minimizing)
