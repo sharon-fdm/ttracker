@@ -1235,6 +1235,30 @@ end tell`);
     return;
   }
 
+  // GET /api/confidential
+  if (req.method === 'GET' && url.pathname === '/api/confidential') {
+    const state = loadState();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ encrypted: state.confidential || null }));
+    return;
+  }
+
+  // PUT /api/confidential
+  if (req.method === 'PUT' && url.pathname === '/api/confidential') {
+    const body = await new Promise((resolve) => {
+      let data = '';
+      req.on('data', c => data += c);
+      req.on('end', () => resolve(data));
+    });
+    const { encrypted } = JSON.parse(body);
+    const state = loadState();
+    state.confidential = encrypted;
+    saveState(state);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
   // GET /api/stickies-height
   if (req.method === 'GET' && url.pathname === '/api/stickies-height') {
     const state = loadState();
@@ -2146,6 +2170,7 @@ function getDashboardHTML() {
       <button class="tab" onclick="switchTab('prs')">PR Assignees</button>
       <button class="tab" onclick="switchTab('px')">PX Teams</button>
       <button class="tab" onclick="switchTab('releases')">Releases</button>
+      <button class="tab" onclick="switchTab('confidential')" style="color:var(--red)">&#128274; Confidential</button>
     </div>
   </div>
   <div>
@@ -2285,6 +2310,26 @@ function getDashboardHTML() {
     <span id="rel-status" style="color:var(--fg-muted);font-size:12px;margin-left:8px"></span>
   </div>
   <div id="rel-gantt"></div>
+</div>
+
+<div id="tab-confidential" class="tab-content">
+  <div id="conf-locked" style="text-align:center;padding:40px">
+    <div style="font-size:48px;margin-bottom:16px">&#128274;</div>
+    <p style="color:var(--fg);margin-bottom:16px">This content is encrypted. Enter your password to unlock.</p>
+    <div class="new-session" style="justify-content:center">
+      <input id="conf-password" type="password" placeholder="Password" style="width:200px" onkeydown="if(event.key==='Enter')unlockConfidential()" />
+      <button class="btn-new" style="background:var(--red)" onclick="unlockConfidential()">Unlock</button>
+    </div>
+    <p id="conf-error" style="color:var(--red);font-size:12px;margin-top:8px"></p>
+    <p id="conf-first-time" style="color:var(--fg-muted);font-size:11px;margin-top:8px;display:none">First time? This password will be used to encrypt your notes. Remember it.</p>
+  </div>
+  <div id="conf-unlocked" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <span style="color:var(--green);font-weight:600">&#128275; Unlocked</span>
+      <button class="btn" style="background:var(--red)" onclick="lockConfidential()">&#128274; Lock</button>
+    </div>
+    <textarea id="conf-textarea" style="width:100%;min-height:400px;background:var(--bg-alt);color:var(--fg);border:2px solid var(--red);border-radius:6px;padding:12px;font-family:inherit;font-size:13px;resize:vertical" oninput="saveConfidential()"></textarea>
+  </div>
 </div>
 
 <div id="delete-modal" class="modal-overlay">
@@ -3330,6 +3375,131 @@ function renderGantt(sprints) {
       + '</div></div>';
   }).join('') + '</div>';
 }
+
+// ─── Confidential ────────────────────────────────────────────────
+let confKey = null; // CryptoKey, only in memory
+let confSaveTimer = null;
+
+async function deriveKey(password, salt) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function encryptText(text, password) {
+  const enc = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(password, salt);
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(text));
+  // Pack: salt(16) + iv(12) + ciphertext
+  const buf = new Uint8Array(salt.length + iv.length + new Uint8Array(ciphertext).length);
+  buf.set(salt, 0);
+  buf.set(iv, 16);
+  buf.set(new Uint8Array(ciphertext), 28);
+  return btoa(String.fromCharCode(...buf));
+}
+
+async function decryptText(b64, password) {
+  const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const salt = raw.slice(0, 16);
+  const iv = raw.slice(16, 28);
+  const ciphertext = raw.slice(28);
+  const key = await deriveKey(password, salt);
+  const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+  return new TextDecoder().decode(dec);
+}
+
+async function unlockConfidential() {
+  const pw = document.getElementById('conf-password').value;
+  if (!pw) return;
+  document.getElementById('conf-error').textContent = '';
+
+  try {
+    const res = await fetch(API + '/api/confidential');
+    const data = await res.json();
+
+    if (data.encrypted) {
+      // Try to decrypt with given password
+      try {
+        const text = await decryptText(data.encrypted, pw);
+        confKey = pw;
+        document.getElementById('conf-textarea').value = text;
+        showConfUnlocked();
+      } catch {
+        document.getElementById('conf-error').textContent = 'Wrong password.';
+      }
+    } else {
+      // First time - no data yet
+      confKey = pw;
+      document.getElementById('conf-textarea').value = '';
+      showConfUnlocked();
+    }
+  } catch (e) {
+    document.getElementById('conf-error').textContent = 'Error: ' + e.message;
+  }
+}
+
+function showConfUnlocked() {
+  document.getElementById('conf-locked').style.display = 'none';
+  document.getElementById('conf-unlocked').style.display = '';
+  document.getElementById('conf-password').value = '';
+}
+
+function lockConfidential() {
+  confKey = null;
+  document.getElementById('conf-locked').style.display = '';
+  document.getElementById('conf-unlocked').style.display = 'none';
+  document.getElementById('conf-textarea').value = '';
+  document.getElementById('conf-error').textContent = '';
+}
+
+async function saveConfidential() {
+  if (!confKey) return;
+  // Debounce: save 1 second after last keystroke
+  clearTimeout(confSaveTimer);
+  confSaveTimer = setTimeout(async () => {
+    const text = document.getElementById('conf-textarea').value;
+    const encrypted = await encryptText(text, confKey);
+    await fetch(API + '/api/confidential', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ encrypted })
+    });
+  }, 1000);
+}
+
+// Auto-lock on visibility change (tab switch, window blur, etc.)
+document.addEventListener('visibilitychange', function() {
+  if (document.hidden && confKey) lockConfidential();
+});
+window.addEventListener('blur', function() {
+  if (confKey) lockConfidential();
+});
+
+// Check if first time (no encrypted data yet) and show hint
+(async function() {
+  try {
+    const res = await fetch(API + '/api/confidential');
+    const data = await res.json();
+    if (!data.encrypted) {
+      document.getElementById('conf-first-time').style.display = '';
+    }
+  } catch {}
+})();
+
+// Also lock when switching tabs within ttracker
+const origSwitchTab = switchTab;
+switchTab = function(tabName) {
+  if (confKey && tabName !== 'confidential') lockConfidential();
+  origSwitchTab(tabName);
+};
 
 // Initial load + auto-refresh
 refresh();
