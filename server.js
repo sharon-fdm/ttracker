@@ -3475,9 +3475,20 @@ async function saveConfidential() {
   }, 1000);
 }
 
-// Auto-lock when page becomes hidden (switching Chrome tabs, minimizing, etc.)
+// Auto-lock when page becomes hidden (switching Chrome tabs, minimizing)
 document.addEventListener('visibilitychange', function() {
   if (document.hidden && confKey) lockConfidential();
+});
+// Auto-lock when switching to another app (Terminal, etc.)
+// Delayed to avoid locking from 1Password popups or brief focus changes
+let blurLockTimer = null;
+window.addEventListener('blur', function() {
+  if (confKey) {
+    blurLockTimer = setTimeout(() => { if (confKey) lockConfidential(); }, 2000);
+  }
+});
+window.addEventListener('focus', function() {
+  clearTimeout(blurLockTimer);
 });
 
 // Check if first time (no encrypted data yet) and show hint
