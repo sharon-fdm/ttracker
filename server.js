@@ -2317,7 +2317,7 @@ function getDashboardHTML() {
     <div style="font-size:48px;margin-bottom:16px">&#128274;</div>
     <p style="color:var(--fg);margin-bottom:16px">This content is encrypted. Enter your password to unlock.</p>
     <div class="new-session" style="justify-content:center">
-      <input id="conf-password" type="password" placeholder="Password" style="width:200px" onkeydown="if(event.key==='Enter')unlockConfidential()" />
+      <input id="conf-password" type="password" placeholder="Password" style="width:200px" autocomplete="off" data-1p-ignore="true" data-lpignore="true" onkeydown="if(event.key==='Enter')unlockConfidential()" />
       <button class="btn-new" style="background:var(--red)" onclick="unlockConfidential()">Unlock</button>
     </div>
     <p id="conf-error" style="color:var(--red);font-size:12px;margin-top:8px"></p>
@@ -3475,12 +3475,9 @@ async function saveConfidential() {
   }, 1000);
 }
 
-// Auto-lock on visibility change (tab switch, window blur, etc.)
+// Auto-lock when page becomes hidden (switching Chrome tabs, minimizing, etc.)
 document.addEventListener('visibilitychange', function() {
   if (document.hidden && confKey) lockConfidential();
-});
-window.addEventListener('blur', function() {
-  if (confKey) lockConfidential();
 });
 
 // Check if first time (no encrypted data yet) and show hint
