@@ -1508,8 +1508,9 @@ end tell`);
     } catch {}
 
     // Separate server and fleetd milestones, sorted by due date
-    const serverMs = milestones.filter(m => /^\d+\.\d+\.\d+$/.test(m.title)).sort((a, b) => a.due.localeCompare(b.due));
-    const fleetdMs = milestones.filter(m => m.title.startsWith('fleetd-v')).sort((a, b) => a.due.localeCompare(b.due));
+    // Only minor releases (X.Y.0), exclude patches (X.Y.1, X.Y.2, etc.)
+    const serverMs = milestones.filter(m => /^\d+\.\d+\.0$/.test(m.title)).sort((a, b) => a.due.localeCompare(b.due));
+    const fleetdMs = milestones.filter(m => /^fleetd-v\d+\.\d+\.0$/.test(m.title)).sort((a, b) => a.due.localeCompare(b.due));
 
     // Sprint cadence: fixed 3-week (21-day) cycles anchored to Sep 18, 2026
     const ANCHOR = new Date('2026-09-18T12:00:00Z'); // last day of a known sprint
