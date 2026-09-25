@@ -1527,7 +1527,7 @@ end tell`);
     // Sprint 1 = current sprint being worked on
     // Sprint 0 = previous (already ended), sprint 1 = current, sprints 2-7 = future
     const sprints = [];
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 5; i++) {
       const sprintEnd = new Date(lastSprintEnd);
       sprintEnd.setDate(sprintEnd.getDate() + (i * SPRINT_DAYS));
       const sprintEndStr = sprintEnd.toISOString().slice(0, 10);
@@ -3354,6 +3354,9 @@ function renderGantt(sprints) {
     const isPrevious = s.label === 'previous';
     const endDate = new Date(s.sprintEnd);
     const endStr = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - 20);
+    const startStr = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
     const serverItem = s.server
       ? '<div class="gantt-item gantt-item-server">' + escapeHtml(s.server.title) + '<br><span>' + s.server.open + ' open</span></div>'
@@ -3388,7 +3391,7 @@ function renderGantt(sprints) {
     return '<div class="gantt-sprint' + (isCurrent ? ' current' : '') + '"' + (isPrevious ? ' style="opacity:0.6"' : '') + '>'
       + '<div class="gantt-header">'
       + (isPrevious ? '<span style="color:var(--fg-muted)">Previous Sprint</span><br>' : isCurrent ? '<span style="color:var(--orange)">Current Sprint</span><br>' : '')
-      + '<span style="color:var(--fg-muted)">Ends ' + endStr + '</span>'
+      + '<span style="color:var(--fg-muted)">' + startStr + ' - ' + endStr + '</span>'
       + '</div>'
       + '<div class="gantt-body">'
       + serverItem
