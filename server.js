@@ -1527,7 +1527,8 @@ end tell`);
     // Sprint 1 = current sprint being worked on
     // Sprint 0 = previous (already ended), sprint 1 = current, sprints 2-7 = future
     const sprints = [];
-    for (let i = 0; i < 5; i++) {
+    const sprintLimit = parseInt(url.searchParams.get('count') || '5');
+    for (let i = 0; i < sprintLimit; i++) {
       const sprintEnd = new Date(lastSprintEnd);
       sprintEnd.setDate(sprintEnd.getDate() + (i * SPRINT_DAYS));
       const sprintEndStr = sprintEnd.toISOString().slice(0, 10);
@@ -2307,6 +2308,12 @@ function getDashboardHTML() {
 <div id="tab-releases" class="tab-content">
   <div style="margin-bottom:12px">
     <button class="refresh-btn" onclick="refreshReleases()" id="rel-refresh-btn">Refresh</button>
+    <span style="margin-left:12px;font-size:12px;color:var(--fg)">
+      Sprints:
+      <button class="btn" style="background:var(--fg-muted);font-size:11px;padding:1px 8px" onclick="changeSprintCount(-1)">-</button>
+      <span id="sprint-count-display" style="font-weight:600"></span>
+      <button class="btn" style="background:var(--fg-muted);font-size:11px;padding:1px 8px" onclick="changeSprintCount(1)">+</button>
+    </span>
     <span id="rel-status" style="color:var(--fg-muted);font-size:12px;margin-left:8px"></span>
   </div>
   <div id="rel-gantt"></div>
@@ -3321,6 +3328,15 @@ function renderPX(teams, issues) {
 }
 
 // ─── Releases ────────────────────────────────────────────────────
+let sprintCount = parseInt(localStorage.getItem('tt-sprint-count') || '5');
+document.getElementById('sprint-count-display').textContent = sprintCount;
+
+function changeSprintCount(delta) {
+  sprintCount = Math.max(3, Math.min(10, sprintCount + delta));
+  localStorage.setItem('tt-sprint-count', sprintCount);
+  document.getElementById('sprint-count-display').textContent = sprintCount;
+  refreshReleases();
+}
 async function refreshReleases() {
   const btn = document.getElementById('rel-refresh-btn');
   const st = document.getElementById('rel-status');
@@ -3328,7 +3344,7 @@ async function refreshReleases() {
   btn.textContent = 'Loading...';
 
   try {
-    const res = await fetch(API + '/api/releases');
+    const res = await fetch(API + '/api/releases?count=' + sprintCount);
     const data = await res.json();
     renderGantt(data.sprints);
     st.textContent = data.sprints.length + ' sprints';
