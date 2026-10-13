@@ -1395,6 +1395,15 @@ end tell`);
         } catch {}
       }
       try {
+        // Community drafts: draft PRs assigned to this user, authored by someone NOT in our users list
+        const usersSet = new Set(users);
+        results[user + ':community'] = allPrs.filter(pr =>
+          pr.isDraft && pr.author && !usersSet.has(pr.author.login) && !pr.author.login.endsWith('[bot]')
+        ).map(pr => ({
+          number: pr.number, title: pr.title, url: pr.url, author: pr.author.login,
+          createdAt: pr.createdAt, repo: pr.repo
+        }));
+
         results[user] = allPrs.filter(pr => !pr.isDraft).map(pr => {
           const userReviews = (pr.reviews || []).filter(r => r.author && r.author.login === user);
           const userApproved = userReviews.some(r => r.state === 'APPROVED');
@@ -3199,6 +3208,26 @@ function renderPRs(users, prs) {
           + '</tr>';
       }).join('');
 
+    // Community drafts for this user
+    const communityDrafts = prs[user + ':community'] || [];
+    let communitySection = '';
+    if (communityDrafts.length > 0) {
+      const cRows = communityDrafts.map(pr => {
+        const age = Math.floor((Date.now() - new Date(pr.createdAt).getTime()) / 86400000);
+        const ageColor = age > 14 ? 'var(--red)' : age > 7 ? 'var(--orange)' : 'var(--fg)';
+        return '<tr>'
+          + '<td><a href="' + escapeHtml(pr.url) + '" target="_blank" style="color:var(--blue);text-decoration:none">#' + pr.number + '</a></td>'
+          + '<td>' + escapeHtml(pr.title) + (pr.repo && pr.repo !== 'fleetdm/fleet' ? ' <span style="color:var(--violet);font-size:10px">[' + escapeHtml(pr.repo.split('/')[1]) + ']</span>' : '') + '</td>'
+          + '<td style="color:var(--orange)">' + escapeHtml(pr.author) + '</td>'
+          + '<td style="color:' + ageColor + '">' + age + 'd in draft</td>'
+          + '</tr>';
+      }).join('');
+      communitySection = '<div style="margin-top:12px;padding-top:8px;border-top:1px dashed var(--bg-border)">'
+        + '<div style="font-size:12px;font-weight:600;color:var(--orange);margin-bottom:6px">&#127760; Community PRs in draft (' + communityDrafts.length + ')</div>'
+        + '<table><thead><tr><th style="width:80px">PR</th><th>Title</th><th style="width:120px">Author</th><th style="width:100px">Age</th></tr></thead>'
+        + '<tbody>' + cRows + '</tbody></table></div>';
+    }
+
     return '<div style="margin-bottom:24px">'
       + '<h2 style="color:var(--blue);border-left:3px solid var(--blue);padding-left:8px;display:flex;align-items:center;gap:8px">'
       + '<a href="https://github.com/fleetdm/fleet/pulls/assigned/' + escapeHtml(user) + '" target="_blank" style="color:var(--blue);text-decoration:none">' + escapeHtml(user) + '</a>'
@@ -3207,6 +3236,7 @@ function renderPRs(users, prs) {
       + '</h2>'
       + '<table><thead><tr><th style="width:80px">PR</th><th>Title</th><th style="width:120px">Author</th><th style="width:80px">Status</th><th style="width:120px">Lines</th><th style="width:80px">Age</th><th>Reassign</th></tr></thead>'
       + '<tbody>' + rows + '</tbody></table>'
+      + communitySection
       + '</div>';
   }).join('');
 }
