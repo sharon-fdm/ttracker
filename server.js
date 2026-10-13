@@ -3222,8 +3222,8 @@ function renderPRs(users, prs) {
           + '<td style="color:' + ageColor + '">' + age + 'd in draft</td>'
           + '</tr>';
       }).join('');
-      communitySection = '<div style="margin-top:12px;padding-top:8px;border-top:1px dashed var(--bg-border)">'
-        + '<div style="font-size:12px;font-weight:600;color:var(--orange);margin-bottom:6px">&#127760; Community PRs in draft (' + communityDrafts.length + ')</div>'
+      communitySection = '<div style="margin-top:12px;padding-top:8px;border-top:1px dashed var(--bg-border);margin-left:24px;padding-left:12px;border-left:3px solid var(--orange)">'
+        + '<div style="font-size:12px;font-weight:600;color:var(--orange);margin-bottom:6px">&#127760; ' + escapeHtml(user) + ' - Community PRs in draft (' + communityDrafts.length + ')</div>'
         + '<table><thead><tr><th style="width:80px">PR</th><th>Title</th><th style="width:120px">Author</th><th style="width:100px">Age</th></tr></thead>'
         + '<tbody>' + cRows + '</tbody></table></div>';
     }
