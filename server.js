@@ -2438,6 +2438,7 @@ function getDashboardHTML() {
     <button class="btn" style="background:var(--red)" id="alert-stop-btn" onclick="stopAlerts()" disabled>Stop</button>
     <button class="refresh-btn" id="alert-run-btn" onclick="runAlertNow()">Run Now</button>
     <span id="alert-status" style="font-size:12px;margin-left:12px;color:var(--fg-muted)"></span>
+    <button class="btn" style="background:var(--violet);font-size:10px;padding:2px 8px;margin-left:8px" id="alert-notif-btn" onclick="requestNotifPermission()">Enable Notifications</button>
   </div>
   <div id="alert-log" style="background:var(--bg-alt);border-radius:6px;padding:16px;min-height:200px;font-size:12px;max-height:500px;overflow-y:auto">
     <p class="empty-state">No alerts yet. Set cadence and press Start.</p>
@@ -3631,7 +3632,7 @@ async function updateAlertUI() {
     }
 
     // Chrome notification for new results
-    if (data.log.length > lastAlertCount && lastAlertCount > 0) {
+    if (data.log.length > lastAlertCount) {
       const latest = data.log[data.log.length - 1];
       if (Notification.permission === 'granted') {
         new Notification('ttracker Alert', { body: latest.message, icon: '/favicon.ico' });
@@ -3641,10 +3642,30 @@ async function updateAlertUI() {
   } catch {}
 }
 
-// Request notification permission on load
-if ('Notification' in window && Notification.permission === 'default') {
-  Notification.requestPermission();
+function requestNotifPermission() {
+  if ('Notification' in window) {
+    Notification.requestPermission().then(p => {
+      updateNotifBtn();
+      if (p === 'granted') new Notification('ttracker', { body: 'Notifications enabled!' });
+    });
+  }
 }
+
+function updateNotifBtn() {
+  const btn = document.getElementById('alert-notif-btn');
+  if (!btn) return;
+  if (!('Notification' in window)) { btn.style.display = 'none'; return; }
+  if (Notification.permission === 'granted') {
+    btn.textContent = '\\u2705 Notifications on';
+    btn.disabled = true;
+    btn.style.background = 'var(--fg-muted)';
+  } else if (Notification.permission === 'denied') {
+    btn.textContent = '\\u274c Notifications blocked';
+    btn.disabled = true;
+    btn.style.background = 'var(--red)';
+  }
+}
+updateNotifBtn();
 
 // Poll alert status every 10 seconds
 setInterval(updateAlertUI, 10000);
