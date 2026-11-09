@@ -2438,7 +2438,10 @@ function getDashboardHTML() {
     <button class="btn" style="background:var(--red)" id="alert-stop-btn" onclick="stopAlerts()" disabled>Stop</button>
     <button class="refresh-btn" id="alert-run-btn" onclick="runAlertNow()">Run Now</button>
     <span id="alert-status" style="font-size:12px;margin-left:12px;color:var(--fg-muted)"></span>
-    <button class="btn" style="background:var(--violet);font-size:10px;padding:2px 8px;margin-left:8px" id="alert-notif-btn" onclick="requestNotifPermission()">Enable Notifications</button>
+    <label style="margin-left:12px;font-size:12px;color:var(--fg);cursor:pointer">
+      <input type="checkbox" id="alert-notif-toggle" onchange="toggleAlertNotifs()" checked /> Notify me
+    </label>
+    <button class="btn" style="background:var(--violet);font-size:10px;padding:2px 8px;margin-left:4px" id="alert-notif-btn" onclick="requestNotifPermission()">Enable Notifications</button>
   </div>
   <div id="alert-log" style="background:var(--bg-alt);border-radius:6px;padding:16px;min-height:200px;font-size:12px;max-height:500px;overflow-y:auto">
     <p class="empty-state">No alerts yet. Set cadence and press Start.</p>
@@ -3632,14 +3635,22 @@ async function updateAlertUI() {
     }
 
     // Chrome notification for new results
-    if (data.log.length > lastAlertCount) {
+    if (data.log.length > lastAlertCount && alertNotifsEnabled) {
       const latest = data.log[data.log.length - 1];
-      if (Notification.permission === 'granted') {
-        new Notification('ttracker Alert', { body: latest.message, icon: '/favicon.ico' });
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('ttracker Alert', { body: latest.message });
       }
     }
     lastAlertCount = data.log.length;
   } catch {}
+}
+
+let alertNotifsEnabled = localStorage.getItem('tt-alert-notifs') !== '0';
+document.getElementById('alert-notif-toggle').checked = alertNotifsEnabled;
+
+function toggleAlertNotifs() {
+  alertNotifsEnabled = document.getElementById('alert-notif-toggle').checked;
+  localStorage.setItem('tt-alert-notifs', alertNotifsEnabled ? '1' : '0');
 }
 
 function requestNotifPermission() {
