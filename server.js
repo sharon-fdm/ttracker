@@ -260,6 +260,52 @@ end tell`;
 
 let snapshotInProgress = false;
 
+// ─── Alerts ──────────────────────────────────────────────────────────────────
+let alertTimerId = null;
+let alertCadenceMin = 60;
+let alertRunning = false;
+let alertLog = [];
+
+function startAlertTimer() {
+  stopAlertTimer();
+  alertTimerId = setInterval(() => runAlertTask(), alertCadenceMin * 60000);
+  console.log(`[alerts] Started with ${alertCadenceMin} min cadence`);
+  runAlertTask();
+}
+
+function stopAlertTimer() {
+  if (alertTimerId) {
+    clearInterval(alertTimerId);
+    alertTimerId = null;
+    console.log('[alerts] Stopped');
+  }
+}
+
+async function runAlertTask() {
+  if (alertRunning) return;
+  alertRunning = true;
+  const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  console.log(`[alerts] Running task at ${ts}`);
+
+  try {
+    const count = await new Promise((resolve) => {
+      execFile('gh', ['issue', 'list', '--repo', 'fleetdm/fleet',
+        '--assignee', 'sharon-fdm', '--state', 'open',
+        '--json', 'number', '--jq', 'length'],
+        { timeout: 15000 }, (err, stdout) => resolve(err ? 'error' : stdout.trim()));
+    });
+
+    const msg = `You have ${count} open tickets assigned to you.`;
+    alertLog.push({ time: ts, message: msg, count: parseInt(count) || 0 });
+    if (alertLog.length > 100) alertLog.shift();
+    console.log(`[alerts] ${msg}`);
+  } catch (err) {
+    alertLog.push({ time: ts, message: `Error: ${err.message}`, count: -1 });
+  }
+
+  alertRunning = false;
+}
+
 async function takeSnapshot() {
   if (snapshotInProgress) return null;
   snapshotInProgress = true;
@@ -1235,6 +1281,59 @@ end tell`);
     return;
   }
 
+  // POST /api/alerts/start
+  if (req.method === 'POST' && url.pathname === '/api/alerts/start') {
+    const body = await new Promise((resolve) => {
+      let data = '';
+      req.on('data', c => data += c);
+      req.on('end', () => resolve(data));
+    });
+    const { cadence } = JSON.parse(body);
+    alertCadenceMin = Math.max(1, Math.min(1440, cadence || 60));
+    startAlertTimer();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, cadence: alertCadenceMin }));
+    return;
+  }
+
+  // POST /api/alerts/stop
+  if (req.method === 'POST' && url.pathname === '/api/alerts/stop') {
+    stopAlertTimer();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // POST /api/alerts/run
+  if (req.method === 'POST' && url.pathname === '/api/alerts/run') {
+    if (alertRunning) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Task is currently running' }));
+      return;
+    }
+    // Reset timer if active
+    if (alertTimerId) {
+      clearInterval(alertTimerId);
+      alertTimerId = setInterval(() => runAlertTask(), alertCadenceMin * 60000);
+    }
+    await runAlertTask();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // GET /api/alerts/status
+  if (req.method === 'GET' && url.pathname === '/api/alerts/status') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      active: !!alertTimerId,
+      running: alertRunning,
+      cadence: alertCadenceMin,
+      log: alertLog.slice(-20)
+    }));
+    return;
+  }
+
   // GET /api/confidential
   if (req.method === 'GET' && url.pathname === '/api/confidential') {
     const state = loadState();
@@ -2181,6 +2280,7 @@ function getDashboardHTML() {
       <button class="tab" onclick="switchTab('prs')">PR Assignees</button>
       <button class="tab" onclick="switchTab('px')">PX Teams</button>
       <button class="tab" onclick="switchTab('releases')">Releases</button>
+      <button class="tab" onclick="switchTab('alerts')">&#128276; Alerts</button>
       <button class="tab" onclick="switchTab('confidential')" style="color:var(--red)">&#128274; Confidential</button>
     </div>
   </div>
@@ -2327,6 +2427,21 @@ function getDashboardHTML() {
     <span id="rel-status" style="color:var(--fg-muted);font-size:12px;margin-left:8px"></span>
   </div>
   <div id="rel-gantt"></div>
+</div>
+
+<div id="tab-alerts" class="tab-content">
+  <div class="new-session" style="margin-bottom:16px">
+    <span style="font-weight:600;color:var(--fg)">Cadence:</span>
+    <input id="alert-cadence" type="number" min="1" max="1440" value="60" style="width:60px;text-align:center" />
+    <span style="color:var(--fg-muted);font-size:12px">minutes</span>
+    <button class="btn" style="background:var(--green)" id="alert-start-btn" onclick="startAlerts()">Start</button>
+    <button class="btn" style="background:var(--red)" id="alert-stop-btn" onclick="stopAlerts()" disabled>Stop</button>
+    <button class="refresh-btn" id="alert-run-btn" onclick="runAlertNow()">Run Now</button>
+    <span id="alert-status" style="font-size:12px;margin-left:12px;color:var(--fg-muted)"></span>
+  </div>
+  <div id="alert-log" style="background:var(--bg-alt);border-radius:6px;padding:16px;min-height:200px;font-size:12px;max-height:500px;overflow-y:auto">
+    <p class="empty-state">No alerts yet. Set cadence and press Start.</p>
+  </div>
 </div>
 
 <div id="tab-confidential" class="tab-content">
@@ -3448,6 +3563,92 @@ function renderGantt(sprints) {
       + '</div></div>';
   }).join('') + '</div>';
 }
+
+// ─── Alerts ──────────────────────────────────────────────────────
+let lastAlertCount = 0;
+
+async function startAlerts() {
+  const cadence = parseInt(document.getElementById('alert-cadence').value) || 60;
+  await fetch(API + '/api/alerts/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cadence })
+  });
+  updateAlertUI();
+}
+
+async function stopAlerts() {
+  await fetch(API + '/api/alerts/stop', { method: 'POST' });
+  updateAlertUI();
+}
+
+async function runAlertNow() {
+  const btn = document.getElementById('alert-run-btn');
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+  const res = await fetch(API + '/api/alerts/run', { method: 'POST' });
+  const data = await res.json();
+  if (!data.ok) {
+    document.getElementById('alert-status').textContent = data.error || 'Error';
+  }
+  btn.textContent = 'Run Now';
+  btn.disabled = false;
+  await updateAlertUI();
+}
+
+async function updateAlertUI() {
+  try {
+    const res = await fetch(API + '/api/alerts/status');
+    const data = await res.json();
+
+    const startBtn = document.getElementById('alert-start-btn');
+    const stopBtn = document.getElementById('alert-stop-btn');
+    const runBtn = document.getElementById('alert-run-btn');
+    const statusEl = document.getElementById('alert-status');
+
+    startBtn.disabled = data.active;
+    stopBtn.disabled = !data.active;
+    runBtn.disabled = data.running;
+    document.getElementById('alert-cadence').value = data.cadence;
+
+    if (data.active) {
+      statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">&#9679; Active</span>' + (data.running ? ' <span style="color:var(--orange)">(running...)</span>' : '');
+    } else {
+      statusEl.innerHTML = '<span style="color:var(--fg-muted)">&#9679; Stopped</span>';
+    }
+
+    // Render log
+    const logEl = document.getElementById('alert-log');
+    if (data.log.length === 0) {
+      logEl.innerHTML = '<p class="empty-state">No alerts yet. Set cadence and press Start.</p>';
+    } else {
+      logEl.innerHTML = data.log.slice().reverse().map(entry =>
+        '<div style="padding:6px 0;border-bottom:1px solid var(--bg-border)">'
+        + '<span style="color:var(--fg-muted);font-size:11px">' + escapeHtml(entry.time) + '</span> '
+        + '<span style="font-weight:600">' + escapeHtml(entry.message) + '</span>'
+        + '</div>'
+      ).join('');
+    }
+
+    // Chrome notification for new results
+    if (data.log.length > lastAlertCount && lastAlertCount > 0) {
+      const latest = data.log[data.log.length - 1];
+      if (Notification.permission === 'granted') {
+        new Notification('ttracker Alert', { body: latest.message, icon: '/favicon.ico' });
+      }
+    }
+    lastAlertCount = data.log.length;
+  } catch {}
+}
+
+// Request notification permission on load
+if ('Notification' in window && Notification.permission === 'default') {
+  Notification.requestPermission();
+}
+
+// Poll alert status every 10 seconds
+setInterval(updateAlertUI, 10000);
+updateAlertUI();
 
 // ─── Confidential ────────────────────────────────────────────────
 let confKey = null; // CryptoKey, only in memory
