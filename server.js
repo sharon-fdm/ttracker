@@ -3678,6 +3678,8 @@ function refreshReleases() {
       label: i === currentSprintIndex ? 'current' : i < currentSprintIndex ? 'previous' : '',
       serverVersion: bumpMinor(serverVersion, i),
       fleetdVersion: bumpMinor(fleetdVersion, i),
+      rcServerVersion: i > 0 ? bumpMinor(serverVersion, i - 1) : null,
+      rcFleetdVersion: i > 0 ? bumpMinor(fleetdVersion, i - 1) : null,
       rcDateStr: rcDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       relDateStr: relDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     });
@@ -3704,18 +3706,21 @@ function renderGantt(sprints) {
     const serverItem = '<div class="gantt-item gantt-item-server">' + escapeHtml(s.serverVersion) + '</div>';
     const fleetdItem = '<div class="gantt-item gantt-item-fleetd">' + escapeHtml(s.fleetdVersion) + '</div>';
 
-    const rcNames = s.serverVersion + ' + ' + s.fleetdVersion;
-    const rcArrow = '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bg-border);margin-right:66%;text-align:center">'
-      + '<div style="color:var(--violet);font-size:16px">&#9650;</div>'
-      + '<div style="font-size:10px;color:var(--violet);font-weight:600">Cut RC ' + s.rcDateStr + '</div>'
-      + '<div style="font-size:10px;color:var(--fg-muted)">' + escapeHtml(rcNames) + '</div>'
-      + '</div>';
-
-    const releaseArrow = '<div style="margin-top:4px;margin-left:66%;text-align:center">'
-      + '<div style="color:var(--orange);font-size:16px">&#9650;</div>'
-      + '<div style="font-size:10px;color:var(--orange);font-weight:600">Release ' + s.relDateStr + '</div>'
-      + '<div style="font-size:10px;color:var(--fg-muted)">' + escapeHtml(rcNames) + '</div>'
-      + '</div>';
+    let rcArrow = '';
+    let releaseArrow = '';
+    if (s.rcServerVersion) {
+      const rcNames = s.rcServerVersion + ' + ' + s.rcFleetdVersion;
+      rcArrow = '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bg-border);margin-right:66%;text-align:center">'
+        + '<div style="color:var(--violet);font-size:16px">&#9650;</div>'
+        + '<div style="font-size:10px;color:var(--violet);font-weight:600">Cut RC ' + s.rcDateStr + '</div>'
+        + '<div style="font-size:10px;color:var(--fg-muted)">' + escapeHtml(rcNames) + '</div>'
+        + '</div>';
+      releaseArrow = '<div style="margin-top:4px;margin-left:66%;text-align:center">'
+        + '<div style="color:var(--orange);font-size:16px">&#9650;</div>'
+        + '<div style="font-size:10px;color:var(--orange);font-weight:600">Release ' + s.relDateStr + '</div>'
+        + '<div style="font-size:10px;color:var(--fg-muted)">' + escapeHtml(rcNames) + '</div>'
+        + '</div>';
+    }
 
     return '<div class="gantt-sprint' + (isCurrent ? ' current' : '') + '"' + (isPrevious ? ' style="opacity:0.6"' : '') + '>'
       + '<div class="gantt-header">'
