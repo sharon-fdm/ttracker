@@ -281,6 +281,107 @@ function stopAlertTimer() {
   }
 }
 
+const ALERT_BOARDS = [
+  { number: 71, name: '#g-orchestration' },
+  { number: 97, name: 'Supply Chain' },
+  { number: 106, name: 'Power to PC' },
+];
+const ALERT_NO_MS_STATUSES = ['in progress', 'ready for review', 'awaiting qa', 'ready for release'];
+const ALERT_UNRELEASED_BUG_STATUSES = ['inbox', 'drafting', 'ready', 'blocked', 'in progress', 'ready for review', 'awaiting qa'];
+
+function ghGraphQL(query, variables) {
+  const args = ['api', 'graphql', '-f', `query=${query}`];
+  for (const [k, v] of Object.entries(variables || {})) {
+    args.push('-f', `${k}=${v}`);
+  }
+  return new Promise((resolve, reject) => {
+    execFile('gh', args, { timeout: 30000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
+      if (err) return reject(err);
+      try { resolve(JSON.parse(stdout)); } catch (e) { reject(e); }
+    });
+  });
+}
+
+async function fetchBoardItems(projectNum) {
+  const query = `query($cursor: String) {
+  organization(login: "fleetdm") {
+    projectV2(number: ${projectNum}) {
+      items(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          status: fieldValueByName(name: "Status") {
+            ... on ProjectV2ItemFieldSingleSelectValue { name }
+          }
+          content {
+            ... on Issue { number title url milestone { title } assignees(first: 5) { nodes { login } } labels(first: 20) { nodes { name } } }
+            ... on PullRequest { number title url milestone { title } assignees(first: 5) { nodes { login } } labels(first: 20) { nodes { name } } }
+          }
+        }
+      }
+    }
+  }}`;
+
+  const all = [];
+  let cursor = null;
+  for (let page = 0; page < 30; page++) {
+    const vars = cursor ? { cursor } : {};
+    const data = await ghGraphQL(query, vars);
+    const items = data?.data?.organization?.projectV2?.items;
+    if (!items) break;
+    for (const item of items.nodes) {
+      const content = item?.content;
+      if (!content) continue;
+      all.push({
+        number: content.number,
+        title: content.title,
+        url: content.url,
+        status: item?.status?.name || '',
+        assignees: (content.assignees?.nodes || []).map(a => a.login),
+        labels: (content.labels?.nodes || []).map(l => l.name),
+        hasMilestone: !!content.milestone,
+      });
+    }
+    if (!items.pageInfo.hasNextPage) break;
+    cursor = items.pageInfo.endCursor;
+  }
+  return all;
+}
+
+function statusMatches(statusName, patterns) {
+  const lower = statusName.toLowerCase();
+  return patterns.some(p => lower.includes(p));
+}
+
+async function fetchLinkedPRs(issueUrl) {
+  const m = issueUrl.match(/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)/);
+  if (!m) return [];
+  const [, owner, repo, num] = m;
+  const query = `{
+  repository(owner: "${owner}", name: "${repo}") {
+    issue(number: ${num}) {
+      timelineItems(first: 30, itemTypes: [CONNECTED_EVENT, CROSS_REFERENCED_EVENT]) {
+        nodes {
+          ... on ConnectedEvent { subject { ... on PullRequest { number url state assignees(first: 5) { nodes { login } } } } }
+          ... on CrossReferencedEvent { source { ... on PullRequest { number url state assignees(first: 5) { nodes { login } } } } }
+        }
+      }
+    }
+  }}`;
+  try {
+    const data = await ghGraphQL(query);
+    const nodes = data?.data?.repository?.issue?.timelineItems?.nodes || [];
+    const seen = new Set();
+    const prs = [];
+    for (const n of nodes) {
+      const pr = n.subject || n.source;
+      if (!pr || !pr.number || seen.has(pr.number)) continue;
+      seen.add(pr.number);
+      prs.push({ number: pr.number, url: pr.url, state: pr.state, assignees: (pr.assignees?.nodes || []).map(a => a.login) });
+    }
+    return prs;
+  } catch { return []; }
+}
+
 async function runAlertTask() {
   if (alertRunning) return;
   alertRunning = true;
@@ -288,19 +389,65 @@ async function runAlertTask() {
   console.log(`[alerts] Running task at ${ts}`);
 
   try {
-    const count = await new Promise((resolve) => {
-      execFile('gh', ['issue', 'list', '--repo', 'fleetdm/fleet',
-        '--assignee', 'sharon-fdm', '--state', 'open',
-        '--json', 'number', '--jq', 'length'],
-        { timeout: 15000 }, (err, stdout) => resolve(err ? 'error' : stdout.trim()));
-    });
+    const noMsResults = [];
+    const unreleasedBugResults = [];
 
-    const msg = `You have ${count} open tickets assigned to you.`;
-    alertLog.push({ time: ts, message: msg, count: parseInt(count) || 0 });
-    if (alertLog.length > 100) alertLog.shift();
-    console.log(`[alerts] ${msg}`);
+    for (const board of ALERT_BOARDS) {
+      console.log(`[alerts] Fetching ${board.name}...`);
+      const items = await fetchBoardItems(board.number);
+
+      const noMs = items.filter(i => statusMatches(i.status, ALERT_NO_MS_STATUSES) && !i.hasMilestone);
+      if (noMs.length > 0) noMsResults.push({ board: board.name, items: noMs });
+
+      const bugs = items.filter(i => statusMatches(i.status, ALERT_UNRELEASED_BUG_STATUSES) && i.labels.includes('~unreleased bug'));
+      if (bugs.length > 0) unreleasedBugResults.push({ board: board.name, items: bugs });
+    }
+
+    // Log: no milestone check
+    const noMsTotal = noMsResults.reduce((s, r) => s + r.items.length, 0);
+    if (noMsTotal === 0) {
+      alertLog.push({ time: ts, check: 'no-milestone', message: 'No milestone: all clear.', count: 0 });
+    } else {
+      alertLog.push({ time: ts, check: 'no-milestone', message: `No milestone: ${noMsTotal} ticket${noMsTotal > 1 ? 's' : ''}`, count: noMsTotal, details: noMsResults });
+    }
+    console.log(`[alerts] No milestone: ${noMsTotal} found`);
+
+    // Enrich unreleased bugs with linked PR assignees
+    for (const r of unreleasedBugResults) {
+      for (const item of r.items) {
+        const prs = await fetchLinkedPRs(item.url);
+        const allNames = new Set();
+        let hasUnassigned = false;
+        for (const pr of prs) {
+          if (pr.assignees.length === 0) hasUnassigned = true;
+          for (const a of pr.assignees) allNames.add(a);
+        }
+        const names = [...allNames];
+        if (prs.length === 0) {
+          item.reviewers = 'no PRs';
+        } else if (names.length === 0) {
+          item.reviewers = 'no assignee';
+        } else if (hasUnassigned) {
+          item.reviewers = names.join(', ') + ' (some PRs unassigned)';
+        } else {
+          item.reviewers = names.join(', ');
+        }
+      }
+    }
+
+    // Log: unreleased bug check
+    const bugTotal = unreleasedBugResults.reduce((s, r) => s + r.items.length, 0);
+    if (bugTotal === 0) {
+      alertLog.push({ time: ts, check: 'unreleased-bug', message: 'Unreleased bugs: all clear.', count: 0 });
+    } else {
+      alertLog.push({ time: ts, check: 'unreleased-bug', message: `Unreleased bugs: ${bugTotal} ticket${bugTotal > 1 ? 's' : ''}`, count: bugTotal, details: unreleasedBugResults });
+    }
+    console.log(`[alerts] Unreleased bugs: ${bugTotal} found`);
+
+    while (alertLog.length > 100) alertLog.shift();
   } catch (err) {
     alertLog.push({ time: ts, message: `Error: ${err.message}`, count: -1 });
+    console.error(`[alerts] Error:`, err.message);
   }
 
   alertRunning = false;
@@ -1322,6 +1469,14 @@ end tell`);
     return;
   }
 
+  // POST /api/alerts/clear
+  if (req.method === 'POST' && url.pathname === '/api/alerts/clear') {
+    alertLog = [];
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
   // GET /api/alerts/status
   if (req.method === 'GET' && url.pathname === '/api/alerts/status') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1601,73 +1756,27 @@ end tell`);
     return;
   }
 
-  // GET /api/releases
-  if (req.method === 'GET' && url.pathname === '/api/releases') {
-    let milestones = [];
-    try {
-      const msData = await new Promise((resolve) => {
-        execFile('gh', ['api', 'repos/fleetdm/fleet/milestones?state=open&sort=due_on&direction=asc&per_page=30',
-          '--jq', '.[] | select(.due_on != null) | {title: .title, due: .due_on, open: .open_issues}'],
-          { timeout: 15000 }, (err, stdout) => resolve(err ? '' : stdout.trim()));
-      });
-      if (msData) {
-        milestones = msData.split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
-      }
-    } catch {}
-
-    // Separate server and fleetd milestones, sorted by due date
-    // Only minor releases (X.Y.0), exclude patches (X.Y.1, X.Y.2, etc.)
-    const serverMs = milestones.filter(m => /^\d+\.\d+\.0$/.test(m.title)).sort((a, b) => a.due.localeCompare(b.due));
-    const fleetdMs = milestones.filter(m => /^fleetd-v\d+\.\d+\.0$/.test(m.title)).sort((a, b) => a.due.localeCompare(b.due));
-
-    // Sprint cadence: fixed 3-week (21-day) cycles anchored to Sep 18, 2026
-    const ANCHOR = new Date('2026-09-18T12:00:00Z'); // last day of a known sprint
-    const today = new Date(new Date().toISOString().slice(0,10) + 'T12:00:00Z');
-    const SPRINT_DAYS = 21;
-
-    // Find the most recent sprint end <= today
-    const daysSinceAnchor = Math.floor((today - ANCHOR) / 86400000);
-    const sprintsSinceAnchor = Math.floor(daysSinceAnchor / SPRINT_DAYS);
-    const lastSprintEnd = new Date(ANCHOR);
-    lastSprintEnd.setDate(lastSprintEnd.getDate() + (sprintsSinceAnchor * SPRINT_DAYS));
-
-    // Build 7 sprints: previous (ended), current, + 5 ahead
-    // Sprint 0 = the one that just ended (or ends today)
-    // Sprint 1 = current sprint being worked on
-    // Sprint 0 = previous (already ended), sprint 1 = current, sprints 2-7 = future
-    const sprints = [];
-    const sprintLimit = parseInt(url.searchParams.get('count') || '5');
-    for (let i = 0; i < sprintLimit; i++) {
-      const sprintEnd = new Date(lastSprintEnd);
-      sprintEnd.setDate(sprintEnd.getDate() + (i * SPRINT_DAYS));
-      const sprintEndStr = sprintEnd.toISOString().slice(0, 10);
-
-      // Development: what's being developed ends on this sprint's end date
-      // The milestone whose release date falls in the NEXT sprint is what we're developing
-      // Milestones are ordered by due date. Find the one with due date closest after this sprint end
-      const devServer = serverMs.find(m => m.due.slice(0,10) > sprintEndStr);
-      const devFleetd = fleetdMs.find(m => m.due.slice(0,10) > sprintEndStr);
-
-      // Release: milestone whose due date falls WITHIN this sprint (between prev end and this end)
-      const prevEnd = new Date(sprintEnd);
-      prevEnd.setDate(prevEnd.getDate() - SPRINT_DAYS);
-      const prevEndStr = prevEnd.toISOString().slice(0, 10);
-      const relServer = serverMs.find(m => m.due.slice(0,10) > prevEndStr && m.due.slice(0,10) <= sprintEndStr);
-      const relFleetd = fleetdMs.find(m => m.due.slice(0,10) > prevEndStr && m.due.slice(0,10) <= sprintEndStr);
-
-      sprints.push({
-        sprintEnd: sprintEndStr,
-        label: i === 0 ? 'previous' : i === 1 ? 'current' : '',
-        server: devServer,
-        fleetd: devFleetd,
-        releaseServer: relServer,
-        releaseFleetd: relFleetd,
-        releaseDue: relServer ? relServer.due : (relFleetd ? relFleetd.due : null)
-      });
-    }
-
+  // GET /api/release-anchor
+  if (req.method === 'GET' && url.pathname === '/api/release-anchor') {
+    const state = loadState();
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ sprints }));
+    res.end(JSON.stringify(state.releaseAnchor || null));
+    return;
+  }
+
+  // POST /api/release-anchor
+  if (req.method === 'POST' && url.pathname === '/api/release-anchor') {
+    const body = await new Promise((resolve) => {
+      let data = '';
+      req.on('data', c => data += c);
+      req.on('end', () => resolve(data));
+    });
+    const { date, serverVersion, fleetdVersion } = JSON.parse(body);
+    const state = loadState();
+    state.releaseAnchor = { date, serverVersion, fleetdVersion };
+    saveState(state);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
     return;
   }
 
@@ -2416,15 +2525,27 @@ function getDashboardHTML() {
 </div>
 
 <div id="tab-releases" class="tab-content">
-  <div style="margin-bottom:12px">
+  <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px">
+    <span style="font-weight:600;color:var(--fg)">Anchor:</span>
+    <label style="color:var(--fg-muted)">First Monday
+      <input id="rel-anchor-date" type="date" style="width:140px;margin-left:4px" />
+    </label>
+    <label style="color:var(--fg-muted)">Fleet
+      <input id="rel-anchor-server" type="text" placeholder="5.1.0" style="width:70px;margin-left:4px;text-align:center" />
+    </label>
+    <label style="color:var(--fg-muted)">fleetd
+      <input id="rel-anchor-fleetd" type="text" placeholder="1.64.0" style="width:70px;margin-left:4px;text-align:center" />
+    </label>
+    <button class="btn" style="background:var(--green)" onclick="setReleaseAnchor()">Set</button>
+    <span style="color:var(--bg-border)">|</span>
     <button class="refresh-btn" onclick="refreshReleases()" id="rel-refresh-btn">Refresh</button>
-    <span style="margin-left:12px;font-size:12px;color:var(--fg)">
+    <span style="color:var(--fg)">
       Sprints:
       <button class="btn" style="background:var(--fg-muted);font-size:11px;padding:1px 8px" onclick="changeSprintCount(-1)">-</button>
       <span id="sprint-count-display" style="font-weight:600"></span>
       <button class="btn" style="background:var(--fg-muted);font-size:11px;padding:1px 8px" onclick="changeSprintCount(1)">+</button>
     </span>
-    <span id="rel-status" style="color:var(--fg-muted);font-size:12px;margin-left:8px"></span>
+    <span id="rel-status" style="color:var(--fg-muted);font-size:12px"></span>
   </div>
   <div id="rel-gantt"></div>
 </div>
@@ -2437,6 +2558,7 @@ function getDashboardHTML() {
     <button class="btn" style="background:var(--green)" id="alert-start-btn" onclick="startAlerts()">Start</button>
     <button class="btn" style="background:var(--red)" id="alert-stop-btn" onclick="stopAlerts()" disabled>Stop</button>
     <button class="refresh-btn" id="alert-run-btn" onclick="runAlertNow()">Run Now</button>
+    <button class="btn" style="background:var(--red)" id="alert-clear-btn" onclick="clearAlerts()">Clear</button>
     <span id="alert-status" style="font-size:12px;margin-left:12px;color:var(--fg-muted)"></span>
   </div>
   <div id="alert-log" style="background:var(--bg-alt);border-radius:6px;padding:16px;min-height:200px;font-size:12px;max-height:500px;overflow-y:auto">
@@ -3271,7 +3393,8 @@ async function refreshPRs() {
     const prs = await prsRes.json();
     renderPRs(users, prs);
     const total = Object.values(prs).reduce((sum, arr) => sum + arr.length, 0);
-    status.textContent = total + ' PR(s) across ' + users.length + ' user(s)';
+    const now = new Date().toLocaleString('sv-SE', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' }).replace(',', '');
+    status.textContent = total + ' PR(s) across ' + users.length + ' user(s) \u00b7 Refreshed ' + now;
   } catch (e) {
     status.textContent = 'Error: ' + e.message;
   }
@@ -3414,7 +3537,8 @@ async function refreshPX() {
     const issues = await issuesRes.json();
     renderPX(teams, issues);
     const total = Object.values(issues).reduce((sum, arr) => sum + arr.length, 0);
-    status.textContent = total + ' issue(s) across ' + teams.length + ' team(s)';
+    const now = new Date().toLocaleString('sv-SE', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' }).replace(',', '');
+    status.textContent = total + ' issue(s) across ' + teams.length + ' team(s) \u00b7 Refreshed ' + now;
   } catch (e) {
     status.textContent = 'Error: ' + e.message;
   }
@@ -3483,76 +3607,119 @@ function changeSprintCount(delta) {
   document.getElementById('sprint-count-display').textContent = sprintCount;
   refreshReleases();
 }
-async function refreshReleases() {
-  const btn = document.getElementById('rel-refresh-btn');
-  const st = document.getElementById('rel-status');
-  btn.disabled = true;
-  btn.textContent = 'Loading...';
 
+function bumpMinor(version, n) {
+  const parts = version.split('.');
+  parts[1] = String(parseInt(parts[1]) + n);
+  return parts.join('.');
+}
+
+async function loadReleaseAnchor() {
   try {
-    const res = await fetch(API + '/api/releases?count=' + sprintCount);
-    const data = await res.json();
-    renderGantt(data.sprints);
-    st.textContent = data.sprints.length + ' sprints';
-  } catch (e) {
-    st.textContent = 'Error: ' + e.message;
+    const res = await fetch(API + '/api/release-anchor');
+    const anchor = await res.json();
+    if (anchor) {
+      document.getElementById('rel-anchor-date').value = anchor.date;
+      document.getElementById('rel-anchor-server').value = anchor.serverVersion;
+      document.getElementById('rel-anchor-fleetd').value = anchor.fleetdVersion;
+    }
+  } catch {}
+  refreshReleases();
+}
+
+async function setReleaseAnchor() {
+  const date = document.getElementById('rel-anchor-date').value;
+  const serverVersion = document.getElementById('rel-anchor-server').value.trim();
+  const fleetdVersion = document.getElementById('rel-anchor-fleetd').value.trim();
+  if (!date || !serverVersion || !fleetdVersion) return;
+  await fetch(API + '/api/release-anchor', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ date, serverVersion, fleetdVersion })
+  });
+  refreshReleases();
+}
+
+function refreshReleases() {
+  const anchorDate = document.getElementById('rel-anchor-date').value;
+  const serverVersion = document.getElementById('rel-anchor-server').value.trim();
+  const fleetdVersion = document.getElementById('rel-anchor-fleetd').value.trim();
+  const st = document.getElementById('rel-status');
+
+  if (!anchorDate || !serverVersion || !fleetdVersion) {
+    document.getElementById('rel-gantt').innerHTML = '<p class="empty-state">Set an anchor to view the release schedule.</p>';
+    st.textContent = '';
+    return;
   }
 
-  btn.textContent = 'Refresh';
-  btn.disabled = false;
+  const SPRINT_DAYS = 21;
+  const anchor = new Date(anchorDate + 'T12:00:00');
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  const daysSinceAnchor = Math.floor((new Date(todayStr + 'T12:00:00') - anchor) / 86400000);
+  const currentSprintIndex = Math.max(0, Math.floor(daysSinceAnchor / SPRINT_DAYS));
+
+  const startIndex = Math.max(0, currentSprintIndex - 1);
+  const sprints = [];
+  for (let i = startIndex; i < startIndex + sprintCount; i++) {
+    const sprintStart = new Date(anchor);
+    sprintStart.setDate(sprintStart.getDate() + (i * SPRINT_DAYS));
+    const sprintEnd = new Date(sprintStart);
+    sprintEnd.setDate(sprintEnd.getDate() + SPRINT_DAYS - 1);
+
+    const rcDate = new Date(sprintStart);
+    rcDate.setDate(rcDate.getDate() + 7);
+    const relDate = new Date(sprintStart);
+    relDate.setDate(relDate.getDate() + 14);
+
+    sprints.push({
+      start: sprintStart.toISOString().slice(0, 10),
+      end: sprintEnd.toISOString().slice(0, 10),
+      label: i === currentSprintIndex ? 'current' : i < currentSprintIndex ? 'previous' : '',
+      serverVersion: bumpMinor(serverVersion, i),
+      fleetdVersion: bumpMinor(fleetdVersion, i),
+      rcDateStr: rcDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      relDateStr: relDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    });
+  }
+
+  renderGantt(sprints);
+  const now = new Date().toLocaleString('sv-SE', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' }).replace(',', '');
+  st.textContent = sprints.length + ' sprints \u00b7 Refreshed ' + now;
 }
 
 function renderGantt(sprints) {
   const container = document.getElementById('rel-gantt');
   if (!sprints || sprints.length === 0) {
-    container.innerHTML = '<p class="empty-state">No upcoming releases found.</p>';
+    container.innerHTML = '<p class="empty-state">No releases to show.</p>';
     return;
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-
-  container.innerHTML = '<div class="gantt">' + sprints.map((s, i) => {
+  container.innerHTML = '<div class="gantt">' + sprints.map(s => {
     const isCurrent = s.label === 'current';
     const isPrevious = s.label === 'previous';
-    const endDate = new Date(s.sprintEnd);
-    const endStr = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const startDate = new Date(endDate);
-    startDate.setDate(startDate.getDate() - 20);
-    const startStr = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const startStr = new Date(s.start + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const endStr = new Date(s.end + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-    const serverItem = s.server
-      ? '<div class="gantt-item gantt-item-server">' + escapeHtml(s.server.title) + '<br><span>' + s.server.open + ' open</span></div>'
-      : '';
-    const fleetdItem = s.fleetd
-      ? '<div class="gantt-item gantt-item-fleetd">' + escapeHtml(s.fleetd.title) + '<br><span>' + s.fleetd.open + ' open</span></div>'
-      : '';
+    const serverItem = '<div class="gantt-item gantt-item-server">' + escapeHtml(s.serverVersion) + '</div>';
+    const fleetdItem = '<div class="gantt-item gantt-item-fleetd">' + escapeHtml(s.fleetdVersion) + '</div>';
 
-    // RC cut arrow: at ~1/3 of sprint, cut RC for previous sprint's dev work
-    let rcArrow = '';
-    if (s.releaseServer || s.releaseFleetd) {
-      const rcNames = [s.releaseServer ? s.releaseServer.title : '', s.releaseFleetd ? s.releaseFleetd.title : ''].filter(Boolean).join(' + ');
-      rcArrow = '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bg-border);margin-right:66%;text-align:center">'
-        + '<div style="color:var(--violet);font-size:16px">&#9650;</div>'
-        + '<div style="font-size:10px;color:var(--violet);font-weight:600">Cut RC</div>'
-        + '<div style="font-size:10px;color:var(--fg-muted)">' + escapeHtml(rcNames) + '</div>'
-        + '</div>';
-    }
+    const rcNames = s.serverVersion + ' + ' + s.fleetdVersion;
+    const rcArrow = '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bg-border);margin-right:66%;text-align:center">'
+      + '<div style="color:var(--violet);font-size:16px">&#9650;</div>'
+      + '<div style="font-size:10px;color:var(--violet);font-weight:600">Cut RC ' + s.rcDateStr + '</div>'
+      + '<div style="font-size:10px;color:var(--fg-muted)">' + escapeHtml(rcNames) + '</div>'
+      + '</div>';
 
-    // Release arrow: at ~2/3 of sprint, release the same versions
-    let releaseArrow = '';
-    if (s.releaseServer || s.releaseFleetd) {
-      const relNames = [s.releaseServer ? s.releaseServer.title : '', s.releaseFleetd ? s.releaseFleetd.title : ''].filter(Boolean).join(' + ');
-      const relDate = s.releaseDue ? new Date(s.releaseDue.slice(0,10) + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
-      releaseArrow = '<div style="margin-top:4px;margin-left:66%;text-align:center">'
-        + '<div style="color:var(--orange);font-size:16px">&#9650;</div>'
-        + '<div style="font-size:10px;color:var(--orange);font-weight:600">Release ' + relDate + '</div>'
-        + '<div style="font-size:10px;color:var(--fg-muted)">' + escapeHtml(relNames) + '</div>'
-        + '</div>';
-    }
+    const releaseArrow = '<div style="margin-top:4px;margin-left:66%;text-align:center">'
+      + '<div style="color:var(--orange);font-size:16px">&#9650;</div>'
+      + '<div style="font-size:10px;color:var(--orange);font-weight:600">Release ' + s.relDateStr + '</div>'
+      + '<div style="font-size:10px;color:var(--fg-muted)">' + escapeHtml(rcNames) + '</div>'
+      + '</div>';
 
     return '<div class="gantt-sprint' + (isCurrent ? ' current' : '') + '"' + (isPrevious ? ' style="opacity:0.6"' : '') + '>'
       + '<div class="gantt-header">'
-      + (isPrevious ? '<span style="color:var(--fg-muted)">Previous Sprint</span><br>' : isCurrent ? '<span style="color:var(--orange)">Current Sprint</span><br>' : '')
+      + (isPrevious ? '<span style="color:var(--fg-muted)">Previous</span><br>' : isCurrent ? '<span style="color:var(--orange)">Current</span><br>' : '')
       + '<span style="color:var(--fg-muted)">' + startStr + ' - ' + endStr + '</span>'
       + '</div>'
       + '<div class="gantt-body">'
@@ -3563,6 +3730,8 @@ function renderGantt(sprints) {
       + '</div></div>';
   }).join('') + '</div>';
 }
+
+loadReleaseAnchor();
 
 // ─── Alerts ──────────────────────────────────────────────────────
 async function startAlerts() {
@@ -3594,6 +3763,26 @@ async function runAlertNow() {
   await updateAlertUI();
 }
 
+async function clearAlerts() {
+  await fetch(API + '/api/alerts/clear', { method: 'POST' });
+  await updateAlertUI();
+}
+
+function copyAlertTable(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const rows = table.querySelectorAll('tr');
+  const lines = [];
+  for (const row of rows) {
+    const cells = row.querySelectorAll('th, td');
+    lines.push(Array.from(cells).map(c => c.textContent.trim()).join('\\t'));
+  }
+  navigator.clipboard.writeText(lines.join('\\n')).then(() => {
+    const btn = table.parentElement.querySelector('button');
+    if (btn) { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1500); }
+  });
+}
+
 async function updateAlertUI() {
   try {
     const res = await fetch(API + '/api/alerts/status');
@@ -3620,12 +3809,49 @@ async function updateAlertUI() {
     if (data.log.length === 0) {
       logEl.innerHTML = '<p class="empty-state">No alerts yet. Set cadence and press Start.</p>';
     } else {
-      logEl.innerHTML = data.log.slice().reverse().map(entry =>
-        '<div style="padding:6px 0;border-bottom:1px solid var(--bg-border)">'
-        + '<span style="color:var(--fg-muted);font-size:11px">' + escapeHtml(entry.time) + '</span> '
-        + '<span style="font-weight:600">' + escapeHtml(entry.message) + '</span>'
-        + '</div>'
-      ).join('');
+      logEl.innerHTML = data.log.slice().reverse().map((entry, i) => {
+        const color = entry.count === 0 ? 'var(--green)' : entry.count > 0 ? 'var(--orange)' : 'var(--red)';
+        let body = '';
+        if (entry.details && entry.details.length > 0) {
+          const eid = 'alert-entry-' + i;
+          const isBug = entry.check === 'unreleased-bug';
+          body = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+            + '<span style="font-weight:600;color:' + color + '">' + escapeHtml(entry.message) + '</span>'
+            + '<button class="refresh-btn" style="font-size:10px;padding:1px 6px" onclick="copyAlertTable(\\'' + eid + '\\')" title="Copy table to clipboard">Copy</button>'
+            + '</div>';
+          body += '<table id="' + eid + '" style="width:100%;border-collapse:collapse;font-size:12px">';
+          body += '<tr style="border-bottom:2px solid var(--bg-border);text-align:left">'
+            + '<th style="padding:4px 8px;color:var(--fg-muted)">Ticket</th>'
+            + '<th style="padding:4px 8px;color:var(--fg-muted)">Column</th>'
+            + '<th style="padding:4px 8px;color:var(--fg-muted)">Team</th>'
+            + '<th style="padding:4px 8px;color:var(--fg-muted)">Owner</th>'
+            + (isBug ? '<th style="padding:4px 8px;color:var(--fg-muted)">PR Assignees</th>' : '')
+            + '</tr>';
+          for (const board of entry.details) {
+            for (const item of board.items) {
+              const owner = (item.assignees || []).join(', ') || '<span style="color:var(--red)">unassigned</span>';
+              const reviewers = item.reviewers || '';
+              const revHtml = !reviewers ? '' : reviewers.includes('no ') ? '<span style="color:var(--red)">' + escapeHtml(reviewers) + '</span>' : escapeHtml(reviewers);
+              body += '<tr style="border-bottom:1px solid var(--bg-border)">'
+                + '<td style="padding:4px 8px"><a href="' + escapeAttr(item.url) + '" target="_blank" style="color:var(--blue)">#' + item.number + '</a></td>'
+                + '<td style="padding:4px 8px">' + escapeHtml(item.status) + '</td>'
+                + '<td style="padding:4px 8px">' + escapeHtml(board.board) + '</td>'
+                + '<td style="padding:4px 8px">' + owner + '</td>'
+                + (isBug ? '<td style="padding:4px 8px">' + revHtml + '</td>' : '')
+                + '</tr>';
+            }
+          }
+          body += '</table>';
+        } else if (entry.count === 0) {
+          body = '<span style="font-weight:600;color:' + color + '">' + escapeHtml(entry.message) + '</span>';
+        } else {
+          body = '<span style="font-weight:600;color:var(--red)">' + escapeHtml(entry.message) + '</span>';
+        }
+        return '<div style="padding:8px 0;border-bottom:1px solid var(--bg-border)">'
+          + '<span style="color:var(--fg-muted);font-size:11px">' + escapeHtml(entry.time) + '</span>'
+          + '<div style="margin-top:4px">' + body + '</div>'
+          + '</div>';
+      }).join('');
     }
 
   } catch {}
