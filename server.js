@@ -3712,12 +3712,12 @@ function renderGantt(sprints) {
       const rcNames = s.rcServerVersion + ' + ' + s.rcFleetdVersion;
       rcArrow = '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bg-border);margin-right:66%;text-align:center">'
         + '<div style="color:var(--violet);font-size:16px">&#9650;</div>'
-        + '<div style="font-size:10px;color:var(--violet);font-weight:600">Cut RC ' + s.rcDateStr + '</div>'
+        + '<div style="font-size:10px;color:var(--violet);font-weight:600;white-space:nowrap">Cut RC ' + s.rcDateStr + '</div>'
         + '<div style="font-size:10px;color:var(--fg-muted)">' + escapeHtml(rcNames) + '</div>'
         + '</div>';
       releaseArrow = '<div style="margin-top:4px;margin-left:66%;text-align:center">'
         + '<div style="color:var(--orange);font-size:16px">&#9650;</div>'
-        + '<div style="font-size:10px;color:var(--orange);font-weight:600">Release ' + s.relDateStr + '</div>'
+        + '<div style="font-size:10px;color:var(--orange);font-weight:600;white-space:nowrap">Release ' + s.relDateStr + '</div>'
         + '<div style="font-size:10px;color:var(--fg-muted)">' + escapeHtml(rcNames) + '</div>'
         + '</div>';
     }
