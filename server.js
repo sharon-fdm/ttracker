@@ -2561,7 +2561,7 @@ function getDashboardHTML() {
     <button class="btn" style="background:var(--red)" id="alert-clear-btn" onclick="clearAlerts()">Clear</button>
     <span id="alert-status" style="font-size:12px;margin-left:12px;color:var(--fg-muted)"></span>
   </div>
-  <div id="alert-log" style="background:var(--bg-alt);border-radius:6px;padding:16px;min-height:200px;font-size:12px;max-height:500px;overflow-y:auto">
+  <div id="alert-log" style="background:var(--bg-alt);border-radius:6px;padding:16px;min-height:200px;font-size:12px;overflow-y:auto;resize:vertical;height:500px">
     <p class="empty-state">No alerts yet. Set cadence and press Start.</p>
   </div>
 </div>
